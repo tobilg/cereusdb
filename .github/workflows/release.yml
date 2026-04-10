@@ -35,7 +35,7 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          BASE_VERSION="$(python3 -c 'import pathlib,re; text=pathlib.Path("Cargo.toml").read_text(); match=re.search(r"\\[workspace\\.package\\][\\s\\S]*?version = \\\"([^\\\"]+)\\\"", text); assert match, "workspace.package.version not found in Cargo.toml"; print(match.group(1))')"
+          BASE_VERSION="$(python3 -c 'import pathlib,tomllib; cargo = tomllib.loads(pathlib.Path("Cargo.toml").read_text()); print(cargo["workspace"]["package"]["version"])')"
 
           if [ "${{ github.event_name }}" = "push" ]; then
             TAG_VERSION="${GITHUB_REF#refs/tags/v}"

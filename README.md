@@ -123,98 +123,211 @@ symlink points at the most recently built artifact.
 
 ## Spatial function reference
 
+Signatures and descriptions below are sourced from the [Apache SedonaDB SQL function reference](https://sedona.apache.org/sedonadb/latest-snapshot/reference/sql/). Entries marked _(local runtime helper)_ are exposed by the cereusdb build but are not documented upstream.
+
 ### Core functions (always available)
 
 66 scalar + 3 aggregate functions from pure Rust.
 
 #### Constructors
-`ST_Point`, `ST_PointZ`, `ST_PointM`, `ST_PointZM`, `ST_GeogPoint`
+
+- **ST_Point** — `geometry ST_Point(x: double, y: double, srid: crs)` — Constructs a Point from X and Y.
+- **ST_PointZ** — `geometry ST_PointZ(x: double, y: double, z: double)` — Constructs a Point with a Z coordinate.
+- **ST_PointM** — `geometry ST_PointM(x: double, y: double, m: double)` — Constructs a Point with an M (measure) coordinate.
+- **ST_PointZM** — `geometry ST_PointZM(x: double, y: double, z: double, m: double)` — Constructs a Point with X, Y, Z, and M coordinates.
+- **ST_GeogPoint** — `geography ST_GeogPoint(longitude: double, latitude: double)` — Creates a geography POINT from longitude and latitude.
 
 #### Parsers
-`ST_GeomFromWKT`, `ST_GeomFromWKB`, `ST_GeomFromEWKT`, `ST_GeomFromEWKB`, `ST_GeogFromWKT`, `ST_GeogFromWKB`, `ST_GeomFromWKBUnchecked`
+
+- **ST_GeomFromWKT** — `geometry ST_GeomFromWKT(wkt: string)` · `geometry ST_GeomFromWKT(wkt: string, srid: crs)` — Constructs a Geometry from Well-Known Text.
+- **ST_GeomFromWKB** — `geometry ST_GeomFromWKB(wkb: binary)` · `geometry ST_GeomFromWKB(wkb: binary, srid: crs)` — Constructs a Geometry from Well-Known Binary.
+- **ST_GeomFromEWKT** — `geometry ST_GeomFromEWKT(ewkt: string)` — Constructs a geometry from Extended Well-Known Text.
+- **ST_GeomFromEWKB** — `geometry ST_GeomFromEWKB(ewkb: binary)` — Constructs a geometry from Extended Well-Known Binary.
+- **ST_GeogFromWKT** — `geography ST_GeogFromWKT(wkt: string)` · `geography ST_GeogFromWKT(wkt: string, srid: integer)` — Constructs a Geography from WKT.
+- **ST_GeogFromWKB** — `geography ST_GeogFromWKB(wkb: binary)` — Constructs a Geography from WKB.
+- **ST_GeomFromWKBUnchecked** — `geometry ST_GeomFromWKBUnchecked(wkb: binary)` — _(local runtime helper)_ constructs a Geometry from WKB without validation.
 
 #### Serializers
-`ST_AsText`, `ST_AsBinary`, `ST_AsEWKB`, `ST_AsEWKT`
+
+- **ST_AsText** — `string ST_AsText(geom: geometry)` — Returns the WKT string representation of a geometry or geography.
+- **ST_AsBinary** — `binary ST_AsBinary(geom: geometry)` — Converts a geometry to Well-Known Binary format.
+- **ST_AsEWKB** — `binary ST_AsEWKB(geom: geometry)` — Returns the EWKB representation of a geometry or geography.
+- **ST_AsEWKT** — `string ST_AsEWKT(geom: geometry)` — _(local extension)_ returns the Extended WKT representation of a geometry.
 
 #### Coordinate accessors
-`ST_X`, `ST_Y`, `ST_Z`, `ST_M`
+
+- **ST_X** — `double ST_X(geom: geometry)` — Returns the X coordinate of the point, or NULL if not available.
+- **ST_Y** — `double ST_Y(geom: geometry)` — Returns the Y coordinate of the point, or NULL if not available.
+- **ST_Z** — `double ST_Z(geom: geometry)` — Returns the Z coordinate of the point, or NULL if not available.
+- **ST_M** — `double ST_M(geom: geometry)` — Returns the M (measure) coordinate of a Point geometry.
 
 #### Bounding box
-`ST_XMin`, `ST_XMax`, `ST_YMin`, `ST_YMax`, `ST_ZMin`, `ST_ZMax`, `ST_MMin`, `ST_MMax`
+
+- **ST_XMin** — `double ST_XMin(geom: geometry)` — Returns the minimum X coordinate of a geometry's bounding box.
+- **ST_XMax** — `double ST_XMax(geom: geometry)` — Returns the maximum X coordinate of a geometry's bounding box.
+- **ST_YMin** — `double ST_YMin(geom: geometry)` — Returns the minimum Y coordinate of a geometry's bounding box.
+- **ST_YMax** — `double ST_YMax(geom: geometry)` — Returns the maximum Y coordinate of a geometry's bounding box.
+- **ST_ZMin** — `double ST_ZMin(geom: geometry)` — Returns the minimum Z coordinate of a geometry's bounding box.
+- **ST_ZMax** — `double ST_ZMax(geom: geometry)` — Returns the maximum Z coordinate of a geometry's bounding box.
+- **ST_MMin** — `double ST_MMin(geom: geometry)` — Returns the minimum M-coordinate of a geometry's bounding box.
+- **ST_MMax** — `double ST_MMax(geom: geometry)` — Returns the maximum M value from a geometry's bounding box.
 
 #### CRS / SRID
-`ST_SRID`, `ST_SetSRID`, `ST_CRS`, `ST_SetCRS`
+
+- **ST_SRID** — `integer ST_SRID(geom: geometry)` — Returns the SRID of a geometry.
+- **ST_SetSRID** — `geometry ST_SetSRID(geom: geometry, srid: integer)` — Sets the SRID for a geometry.
+- **ST_CRS** — `string ST_CRS(geom: geometry)` — Returns the CRS metadata associated with a geometry or geography object.
+- **ST_SetCRS** — `geometry ST_SetCRS(geom: geometry, target_crs: string)` · `geography ST_SetCRS(geog: geography, target_crs: string)` — Sets the CRS for a geometry.
 
 #### Properties
-`ST_Dimension`, `ST_GeometryType`, `ST_NumGeometries`, `ST_NPoints`, `ST_IsEmpty`, `ST_IsClosed`, `ST_IsCollection`, `ST_HasZ`, `ST_HasM`, `ST_ZMFlag`
+
+- **ST_Dimension** — `integer ST_Dimension(geom: geometry)` — Returns the dimension of the geometry.
+- **ST_GeometryType** — `string ST_GeometryType(geom: geometry)` — Returns the type of a geometry.
+- **ST_NumGeometries** — `integer ST_NumGeometries(geom: geometry)` — Returns the number of geometries in a geometry collection.
+- **ST_NPoints** — `integer ST_NPoints(geom: geometry)` — Returns the number of points of the geometry.
+- **ST_IsEmpty** — `boolean ST_IsEmpty(geom: geometry)` — Returns true if the geometry is empty.
+- **ST_IsClosed** — `boolean ST_IsClosed(geom: geometry)` — Returns true if the LINESTRING start and end point are the same.
+- **ST_IsCollection** — `boolean ST_IsCollection(geom: geometry)` — Returns true if the geometry type is a geometry collection type.
+- **ST_HasZ** — `boolean ST_HasZ(geom: geometry)` — Returns true if the geometry has a Z dimension.
+- **ST_HasM** — `boolean ST_HasM(geom: geometry)` — Returns true if the geometry has an M dimension.
+- **ST_ZMFlag** — `integer ST_ZMFlag(geom: geometry)` — Returns a code indicating the dimension of the coordinates in a geometry.
 
 #### Component access
-`ST_GeometryN`, `ST_PointN`, `ST_Points`, `ST_StartPoint`, `ST_EndPoint`, `ST_InteriorRingN`
+
+- **ST_GeometryN** — `geometry ST_GeometryN(geom: geometry, n: integer)` — Returns the 0-based Nth geometry from a geometry collection or multi-type.
+- **ST_PointN** — `geometry ST_PointN(geom: geometry, n: integer)` — Returns the Nth point in a linestring.
+- **ST_Points** — `geometry ST_Points(geom: geometry)` — Returns a MultiPoint geometry consisting of all coordinates of the input geometry.
+- **ST_StartPoint** — `geometry ST_StartPoint(geom: geometry)` — Returns the start point of a linestring geometry.
+- **ST_EndPoint** — `geometry ST_EndPoint(geom: geometry)` — Returns the last point of a linestring.
+- **ST_InteriorRingN** — `geometry ST_InteriorRingN(geom: geometry, n: integer)` — Returns the Nth interior ring of a polygon.
 
 #### Geometry operations
-`ST_Envelope`, `ST_Dump`, `ST_MakeLine`, `ST_Reverse`
+
+- **ST_Envelope** — `geometry ST_Envelope(geom: geometry)` — Returns the bounding box (envelope) of a geometry as a new geometry.
+- **ST_Dump** — `struct ST_Dump(geom: geometry)` — Expands multi-part geometries into child parts.
+- **ST_MakeLine** — `geometry ST_MakeLine(geomA: geometry, geomB: geometry)` — Creates a LineString from two or more input geometries.
+- **ST_Reverse** — `geometry ST_Reverse(geom: geometry)` — Returns the geometry with vertex order reversed.
 
 #### Affine transforms
-`ST_Translate`, `ST_Scale`, `ST_Rotate`, `ST_RotateX`, `ST_RotateY`, `ST_Affine`
+
+- **ST_Translate** — `geometry ST_Translate(geom: geometry, deltaX: double, deltaY: double)` · `geometry ST_Translate(geom: geometry, deltaX: double, deltaY: double, deltaZ: double)` — Returns a geometry with coordinates translated by deltaX, deltaY (and optional deltaZ).
+- **ST_Scale** — `geometry ST_Scale(geom: geometry, scaleX: double, scaleY: double)` · `geometry ST_Scale(geom: geometry, scaleX: double, scaleY: double, scaleZ: double)` — Scales a geometry by multiplying ordinates with scale factors.
+- **ST_Rotate** — `geometry ST_Rotate(geom: geometry, rot: double)` — Rotates a geometry counter-clockwise around the Z axis by an angle in radians.
+- **ST_RotateX** — `geometry ST_RotateX(geom: geometry, rot: double)` — Rotates a geometry around the X axis by an angle in radians.
+- **ST_RotateY** — `geometry ST_RotateY(geom: geometry, rot: double)` — Rotates a geometry around the Y axis by an angle in radians.
+- **ST_Affine** — `geometry ST_Affine(geom: geometry, a: double, b: double, d: double, e: double, xOff: double, yOff: double)` · `geometry ST_Affine(geom: geometry, a: double, b: double, c: double, d: double, e: double, f: double, g: double, h: double, i: double, xOff: double, yOff: double, zOff: double)` — Applies an affine transformation to a geometry.
 
 #### Dimension forcing
-`ST_Force2D`, `ST_Force3D`, `ST_Force3DM`, `ST_Force4D`
+
+- **ST_Force2D** — `geometry ST_Force2D(geom: geometry)` — Forces a geometry into a XY coordinate model.
+- **ST_Force3D** — `geometry ST_Force3D(geom: geometry)` · `geometry ST_Force3D(geom: geometry, z: double)` — Forces a geometry into a XYZ coordinate model with an optional Z value.
+- **ST_Force3DM** — `geometry ST_Force3DM(geom: geometry)` · `geometry ST_Force3DM(geom: geometry, m: double)` — Forces a geometry into a XYM coordinate model with an optional M value.
+- **ST_Force4D** — `geometry ST_Force4D(geom: geometry)` · `geometry ST_Force4D(geom: geometry, z: double)` · `geometry ST_Force4D(geom: geometry, z: double, m: double)` — Forces a geometry into a XYZM coordinate model with optional Z and M values.
 
 #### Aggregates
-`ST_Collect_Agg`, `ST_Envelope_Agg`, `ST_Analyze_Agg`
+
+- **ST_Collect_Agg** — `geometry ST_Collect_Agg(geom: geometry)` — Combines multiple geometries from a set of rows into a single collection.
+- **ST_Envelope_Agg** — `geometry ST_Envelope_Agg(geom: geometry)` — Returns the collective bounding box (envelope) of a set of geometries.
+- **ST_Analyze_Agg** — `struct ST_Analyze_Agg(geom: geometry)` — Computes statistics of geometries for the input geometry.
 
 ### Geo functions (always available)
 
 10 scalar + 2 aggregate functions from the pure-Rust `geo` crate.
 
 #### Measurement
-`ST_Area`, `ST_Length`, `ST_Perimeter`, `ST_Distance`, `ST_DWithin`
+
+- **ST_Area** — `double ST_Area(geom: geometry)` — Returns the area of a geometry.
+- **ST_Length** — `double ST_Length(geom: geometry)` — Returns the length of a geometry.
+- **ST_Perimeter** — `double ST_Perimeter(geom: geometry)` — Calculates the 2D perimeter of a given geometry.
+- **ST_Distance** — `double ST_Distance(geomA: geometry, geomB: geometry)` — Returns the distance between two geometries or geographies.
+- **ST_DWithin** — `boolean ST_DWithin(geomA: geometry, geomB: geometry, distance: double)` — Returns true if two geometries are within a specified distance of each other.
 
 #### Geometry operations
-`ST_Buffer`, `ST_Centroid`, `ST_Intersects`, `ST_LineInterpolatePoint`
+
+- **ST_Buffer** — `geometry ST_Buffer(geom: geometry, distance: float64)` · `geometry ST_Buffer(geom: geometry, distance: float64, params: string)` — Computes a geometry representing all points within a specified distance.
+- **ST_Centroid** — `geometry ST_Centroid(geom: geometry)` — Returns the centroid of a geometry.
+- **ST_Intersects** — `boolean ST_Intersects(geomA: geometry, geomB: geometry)` — Returns true if geomA intersects geomB.
+- **ST_LineInterpolatePoint** — `geometry ST_LineInterpolatePoint(geom: geometry, fraction: double)` — Returns a point interpolated along a line.
 
 #### Serializers
-`ST_AsGeoJSON`
+
+- **ST_AsGeoJSON** — `string ST_AsGeoJSON(geom: geometry)` — Returns the GeoJSON representation of a geometry.
 
 #### Aggregates
-`ST_Intersection_Agg`, `ST_Union_Agg`
+
+- **ST_Intersection_Agg** — `geometry ST_Intersection_Agg(geom: geometry)` — Returns the cumulative intersection of all geometries in the input.
+- **ST_Union_Agg** — `geometry ST_Union_Agg(geom: geometry)` — Returns a geometry representing the point set union of all geometries.
 
 ### GEOS functions (`minimal`, `standard`, `global`, `full`)
 
 42 scalar + 1 aggregate function via GEOS 3.13.1 (C++ cross-compiled with Emscripten).
 
 #### Spatial predicates
-`ST_Contains`, `ST_Within`, `ST_Covers`, `ST_CoveredBy`, `ST_Crosses`, `ST_Touches`, `ST_Overlaps`, `ST_Disjoint`, `ST_Equals`, `ST_Relate`
+
+- **ST_Contains** — `boolean ST_Contains(geomA: geometry, geomB: geometry)` — Returns true if geomA contains geomB.
+- **ST_Within** — `boolean ST_Within(geomA: geometry, geomB: geometry)` — Returns true if A is completely inside B.
+- **ST_Covers** — `boolean ST_Covers(geomA: geometry, geomB: geometry)` — Returns true if geomA covers geomB.
+- **ST_CoveredBy** — `boolean ST_CoveredBy(geomA: geometry, geomB: geometry)` — Returns true if geomA is covered by geomB.
+- **ST_Crosses** — `boolean ST_Crosses(geomA: geometry, geomB: geometry)` — Returns true if A crosses B.
+- **ST_Touches** — `boolean ST_Touches(geomA: geometry, geomB: geometry)` — Returns true if A touches B.
+- **ST_Overlaps** — `boolean ST_Overlaps(geomA: geometry, geomB: geometry)` — Returns true if A overlaps B.
+- **ST_Disjoint** — `boolean ST_Disjoint(geomA: geometry, geomB: geometry)` — Returns true if geomA is disjoint from geomB.
+- **ST_Equals** — `boolean ST_Equals(geomA: geometry, geomB: geometry)` — Returns true if geomA equals geomB.
+- **ST_Relate** — `string ST_Relate(geomA: geometry, geomB: geometry)` · `boolean ST_Relate(geomA: geometry, geomB: geometry, intersectionMatrixPattern: string)` — Returns the DE-9IM intersection matrix string, or tests a given pattern.
 
 #### Validation
-`ST_IsValid`, `ST_IsValidReason`, `ST_IsSimple`, `ST_IsRing`, `ST_MakeValid`
+
+- **ST_IsValid** — `boolean ST_IsValid(geom: geometry)` — Checks whether a geometry meets OGC validity rules.
+- **ST_IsValidReason** — `string ST_IsValidReason(geom: geometry)` — Returns a text explanation describing why a geometry is invalid.
+- **ST_IsSimple** — `boolean ST_IsSimple(geom: geometry)` — Tests if the geometry's only self-intersections are at boundary points.
+- **ST_IsRing** — `boolean ST_IsRing(geom: geometry)` — Returns true if a linestring is `ST_IsClosed` and `ST_IsSimple`.
+- **ST_MakeValid** — `geometry ST_MakeValid(geom: geometry)` · `geometry ST_MakeValid(geom: geometry, keepCollapsed: boolean)` — Creates a valid representation of an invalid geometry.
 
 #### Overlay operations
-`ST_Intersection`, `ST_Union`, `ST_Difference`, `ST_SymDifference`
+
+- **ST_Intersection** — `geometry ST_Intersection(geomA: geometry, geomB: geometry)` · `geography ST_Intersection(geogA: geography, geogB: geography)` — Computes the intersection of two geometries or geographies.
+- **ST_Union** — `geometry ST_Union(geomA: geometry, geomB: geometry)` — Returns a geometry that represents the point set union of two geometries.
+- **ST_Difference** — `geometry ST_Difference(geomA: geometry, geomB: geometry)` — Computes the difference between geomA and geomB.
+- **ST_SymDifference** — `geometry ST_SymDifference(geomA: geometry, geomB: geometry)` — Returns the parts of geometries A and B that do not overlap.
 
 #### Hulls
-`ST_ConvexHull`, `ST_ConcaveHull`
+
+- **ST_ConvexHull** — `geometry ST_ConvexHull(geom: geometry)` — Returns the Convex Hull of polygon A.
+- **ST_ConcaveHull** — `geometry ST_ConcaveHull(geom: geometry, pct_convex: double)` — Returns a concave hull enclosing the input geometry.
 
 #### Simplification
-`ST_Simplify`, `ST_SimplifyPreserveTopology`
+
+- **ST_Simplify** — `geometry ST_Simplify(geom: geometry, tolerance: double)` — Simplifies an input geometry using the Douglas-Peucker algorithm.
+- **ST_SimplifyPreserveTopology** — `geometry ST_SimplifyPreserveTopology(geom: geometry, tolerance: double)` — Simplifies a geometry, ensuring the result is valid with the same topology.
 
 #### Topology
-`ST_Boundary`, `ST_UnaryUnion`, `ST_LineMerge`, `ST_Polygonize`, `ST_Snap`
+
+- **ST_Boundary** — `geometry ST_Boundary(geom: geometry)` — Returns the closure of the combinatorial boundary of this geometry.
+- **ST_UnaryUnion** — `geometry ST_UnaryUnion(geom: geometry)` — Returns a single geometry which is the union of all components.
+- **ST_LineMerge** — `geometry ST_LineMerge(geom: geometry)` — Merges a collection of line segments into the fewest possible LineStrings.
+- **ST_Polygonize** — `geometry ST_Polygonize(geom: geometry)` — Builds a polygonal geometry from linear components in the input geometry.
+- **ST_Snap** — `geometry ST_Snap(geomA: geometry, geomB: geometry, tolerance: double)` — Snaps input geometry to reference geometry within tolerance.
 
 #### Precision
-`ST_MinimumClearance`, `ST_MinimumClearanceLine`
+
+- **ST_MinimumClearance** — `double ST_MinimumClearance(geom: geometry)` — Returns the minimum clearance of a geometry.
+- **ST_MinimumClearanceLine** — `geometry ST_MinimumClearanceLine(geom: geometry)` — Returns a LineString representing the minimum clearance distance of the input geometry.
 
 #### Properties
-`ST_NRings`, `ST_NumInteriorRings`, `ST_NumPoints`
+
+- **ST_NRings** — _(local runtime helper)_ returns the number of rings (interior + exterior) in a polygon.
+- **ST_NumInteriorRings** — _(local runtime helper)_ returns the number of interior rings of a polygon.
+- **ST_NumPoints** — _(local runtime helper)_ returns the number of points in a geometry.
 
 #### Aggregates
-`ST_Polygonize_Agg`
+
+- **ST_Polygonize_Agg** — `geometry ST_Polygonize_Agg(geom: geometry)` — Creates polygons from a set of geometries containing linework representing polygon edges.
 
 ### PROJ functions (`standard`, `global`, `full`)
 
 1 scalar function via PROJ 9.6.0 (C++ cross-compiled with Emscripten).
 
-`ST_Transform` — CRS reprojection (supports EPSG codes, PROJ strings, WKT2)
+- **ST_Transform** — `geometry ST_Transform(geom: geometry, target_crs: string)` · `geometry ST_Transform(geom: geometry, source_crs: string, target_crs: string)` — Transforms a geometry from one CRS to another. Supports EPSG codes, PROJ strings, and WKT2.
 
 ### Raster functions (`full`)
 

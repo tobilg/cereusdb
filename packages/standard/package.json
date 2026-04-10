@@ -1,6 +1,6 @@
 {
   "name": "@cereusdb/standard",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Standard CereusDB browser package with GEOS and PROJ support",
   "type": "module",
   "main": "./dist/index.js",

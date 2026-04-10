@@ -35,15 +35,7 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          BASE_VERSION="$(python3 - <<'PY'
-import pathlib, re
-text = pathlib.Path('Cargo.toml').read_text()
-match = re.search(r'\[workspace\.package\][\s\S]*?version = "([^"]+)"', text)
-if not match:
-    raise SystemExit('workspace.package.version not found in Cargo.toml')
-print(match.group(1))
-PY
-)"
+          BASE_VERSION="$(python3 -c 'import pathlib,re; text=pathlib.Path("Cargo.toml").read_text(); match=re.search(r"\\[workspace\\.package\\][\\s\\S]*?version = \\\"([^\\\"]+)\\\"", text); assert match, "workspace.package.version not found in Cargo.toml"; print(match.group(1))')"
 
           if [ "${{ github.event_name }}" = "push" ]; then
             TAG_VERSION="${GITHUB_REF#refs/tags/v}"
@@ -77,6 +69,11 @@ PY
         with:
           submodules: recursive
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
       - name: Setup Emscripten SDK
         uses: mymindstorm/setup-emsdk@v16
         with:
@@ -88,6 +85,9 @@ PY
 
       - name: Install binaryen
         run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
 
       - name: Checkout vcpkg for S2-enabled builds
         run: git clone --depth 1 https://github.com/microsoft/vcpkg.git deps/vcpkg

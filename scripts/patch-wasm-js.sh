@@ -10,12 +10,20 @@ CACHE_TAG="${CACHE_TAG:-ehfix-20260406-1}"
 
 cp "$SCRIPT_DIR/env_shim.js" "$PKG_DIR/"
 
+sed_in_place() {
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$@"
+  else
+    sed -i '' "$@"
+  fi
+}
+
 # 1. Add shim import at top
-sed -i '' "1s|^|import { createEnvImports, createWasiImports, setMemory } from \"./env_shim.js?v=${CACHE_TAG}\";\nconst __env = createEnvImports();\nconst __wasi = createWasiImports();\n|" "$JS"
+sed_in_place "1s|^|import { createEnvImports, createWasiImports, setMemory } from \"./env_shim.js?v=${CACHE_TAG}\";\nconst __env = createEnvImports();\nconst __wasi = createWasiImports();\n|" "$JS"
 
 # 2. Replace env/wasi imports
-sed -i '' 's|^import \* as \(import[0-9]*\) from "env"$|const \1 = __env;|' "$JS"
-sed -i '' 's|^import \* as \(import[0-9]*\) from "wasi_snapshot_preview1"$|const \1 = __wasi;|' "$JS"
+sed_in_place 's|^import \* as \(import[0-9]*\) from "env"$|const \1 = __env;|' "$JS"
+sed_in_place 's|^import \* as \(import[0-9]*\) from "wasi_snapshot_preview1"$|const \1 = __wasi;|' "$JS"
 
 # 3. Inject setMemory BEFORE __wbg_finalize_init
 # Find lines with "__wbg_load(await" (async init) and inject setMemory after

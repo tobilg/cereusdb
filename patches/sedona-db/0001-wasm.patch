@@ -1,0 +1,558 @@
+diff --git a/c/sedona-gdal/Cargo.toml b/c/sedona-gdal/Cargo.toml
+index 115bdab..ac717fb 100644
+--- a/c/sedona-gdal/Cargo.toml
++++ b/c/sedona-gdal/Cargo.toml
+@@ -1,42 +1,20 @@
+-# Licensed to the Apache Software Foundation (ASF) under one
+-# or more contributor license agreements.  See the NOTICE file
+-# distributed with this work for additional information
+-# regarding copyright ownership.  The ASF licenses this file
+-# to you under the Apache License, Version 2.0 (the
+-# "License"); you may not use this file except in compliance
+-# with the License.  You may obtain a copy of the License at
+-#
+-#   http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing,
+-# software distributed under the License is distributed on an
+-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+-# KIND, either express or implied.  See the License for the
+-# specific language governing permissions and limitations
+-# under the License.
++# WASM-patched copy of sedona-gdal.
++# Changes: libloading gated for non-wasm, direct gdal-sys calls on WASM.
+ 
+ [package]
+ name = "sedona-gdal"
+-version.workspace = true
+-license.workspace = true
+-keywords.workspace = true
+-categories.workspace = true
+-authors.workspace = true
+-homepage.workspace = true
+-repository.workspace = true
+-description.workspace = true
+-readme.workspace = true
+-edition.workspace = true
+-rust-version.workspace = true
++version = "0.4.0"
++license = "Apache-2.0"
++edition = "2021"
++description = "Sedona GDAL integration (WASM-patched)"
+ 
+ [dependencies]
+ gdal-sys = { version = "0.12.0", optional = true }
+-libloading = { workspace = true }
+-thiserror = { workspace = true }
++thiserror = "2"
++
++[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
++libloading = "0.9"
+ 
+ [features]
+ default = ["gdal-sys"]
+ gdal-sys = ["dep:gdal-sys"]
+-
+-[dev-dependencies]
+-sedona-testing = { workspace = true }
+diff --git a/c/sedona-gdal/src/gdal_api.rs b/c/sedona-gdal/src/gdal_api.rs
+index c4baa6b..a6d39d4 100644
+--- a/c/sedona-gdal/src/gdal_api.rs
++++ b/c/sedona-gdal/src/gdal_api.rs
+@@ -16,23 +16,20 @@
+ // under the License.
+ 
+ use std::ffi::CStr;
++#[cfg(not(target_arch = "wasm32"))]
+ use std::path::PathBuf;
+ 
++#[cfg(not(target_arch = "wasm32"))]
+ use libloading::Library;
+ 
++#[cfg(not(target_arch = "wasm32"))]
+ use crate::dyn_load;
+ use crate::errors::{GdalError, GdalInitLibraryError};
+ use crate::gdal_dyn_bindgen::SedonaGdalApi;
+ 
+-/// Invoke a function pointer from the `SedonaGdalApi` struct.
+-///
+-/// # Panics
+-///
+-/// Panics if the function pointer is `None`. This is unreachable in correct usage
+-/// because all function pointers are guaranteed to be `Some` after successful
+-/// initialization of [`GdalApi`] via [`GdalApi::try_from_shared_library`] or
+-/// [`GdalApi::try_from_current_process`], and you cannot obtain a `&GdalApi`
+-/// without successful initialization.
++/// Call through the SedonaGdalApi function pointer table.
++/// On both native and WASM, we use the same macro — the table is populated
++/// differently (dlopen on native, transmute from gdal-sys on WASM).
+ macro_rules! call_gdal_api {
+     ($api:expr, $func:ident $(, $arg:expr)*) => {
+         if let Some(func) = $api.inner.$func {
+@@ -48,14 +45,13 @@ pub(crate) use call_gdal_api;
+ #[derive(Debug)]
+ pub struct GdalApi {
+     pub(crate) inner: SedonaGdalApi,
+-    /// The dynamically loaded GDAL library. Kept alive for the lifetime of the
+-    /// function pointers in `inner`. This is never dropped because the `GdalApi`
+-    /// lives in a `static OnceLock` (see `global.rs`).
++    #[cfg(not(target_arch = "wasm32"))]
+     _lib: Library,
+     name: String,
+ }
+ 
+ impl GdalApi {
++    #[cfg(not(target_arch = "wasm32"))]
+     pub fn try_from_shared_library(shared_library: PathBuf) -> Result<Self, GdalInitLibraryError> {
+         let (lib, inner) = dyn_load::load_gdal_from_path(&shared_library)?;
+         Ok(Self {
+@@ -65,6 +61,7 @@ impl GdalApi {
+         })
+     }
+ 
++    #[cfg(not(target_arch = "wasm32"))]
+     pub fn try_from_current_process() -> Result<Self, GdalInitLibraryError> {
+         let (lib, inner) = dyn_load::load_gdal_from_current_process()?;
+         Ok(Self {
+@@ -74,6 +71,111 @@ impl GdalApi {
+         })
+     }
+ 
++    /// On WASM: populate the function pointer table from gdal-sys symbols.
++    /// Uses transmute to cast gdal_sys function signatures to the
++    /// SedonaGdalApi function pointer types (both use *mut c_void handles).
++    #[cfg(all(target_arch = "wasm32", feature = "gdal-sys"))]
++    pub fn try_from_gdal_sys() -> Result<Self, GdalInitLibraryError> {
++        use crate::gdal_dyn_bindgen::SedonaGdalApi;
++
++        let mut inner = SedonaGdalApi::default();
++
++        #[allow(clippy::missing_transmute_annotations)]
++        unsafe {
++            macro_rules! set_fn {
++                ($field:ident, $gdal_fn:path) => {
++                    inner.$field = Some(std::mem::transmute($gdal_fn as usize));
++                };
++            }
++
++            set_fn!(GDALAllRegister, gdal_sys::GDALAllRegister);
++            set_fn!(GDALOpenEx, gdal_sys::GDALOpenEx);
++            set_fn!(GDALClose, gdal_sys::GDALClose);
++            set_fn!(GDALGetDriverByName, gdal_sys::GDALGetDriverByName);
++            set_fn!(GDALCreate, gdal_sys::GDALCreate);
++            set_fn!(GDALCreateCopy, gdal_sys::GDALCreateCopy);
++            set_fn!(GDALDatasetCreateLayer, gdal_sys::GDALDatasetCreateLayer);
++            set_fn!(GDALGetRasterXSize, gdal_sys::GDALGetRasterXSize);
++            set_fn!(GDALGetRasterYSize, gdal_sys::GDALGetRasterYSize);
++            set_fn!(GDALGetRasterCount, gdal_sys::GDALGetRasterCount);
++            set_fn!(GDALGetRasterBand, gdal_sys::GDALGetRasterBand);
++            set_fn!(GDALGetGeoTransform, gdal_sys::GDALGetGeoTransform);
++            set_fn!(GDALSetGeoTransform, gdal_sys::GDALSetGeoTransform);
++            set_fn!(GDALGetProjectionRef, gdal_sys::GDALGetProjectionRef);
++            set_fn!(GDALSetProjection, gdal_sys::GDALSetProjection);
++            set_fn!(GDALGetSpatialRef, gdal_sys::GDALGetSpatialRef);
++            set_fn!(GDALSetSpatialRef, gdal_sys::GDALSetSpatialRef);
++            set_fn!(GDALAddBand, gdal_sys::GDALAddBand);
++            set_fn!(GDALRasterIO, gdal_sys::GDALRasterIO);
++            set_fn!(GDALRasterIOEx, gdal_sys::GDALRasterIOEx);
++            set_fn!(GDALGetRasterDataType, gdal_sys::GDALGetRasterDataType);
++            set_fn!(GDALGetRasterBandXSize, gdal_sys::GDALGetRasterBandXSize);
++            set_fn!(GDALGetRasterBandYSize, gdal_sys::GDALGetRasterBandYSize);
++            set_fn!(GDALGetBlockSize, gdal_sys::GDALGetBlockSize);
++            set_fn!(GDALGetRasterNoDataValue, gdal_sys::GDALGetRasterNoDataValue);
++            set_fn!(GDALSetRasterNoDataValue, gdal_sys::GDALSetRasterNoDataValue);
++            set_fn!(GDALDeleteRasterNoDataValue, gdal_sys::GDALDeleteRasterNoDataValue);
++            set_fn!(GDALSetRasterNoDataValueAsUInt64, gdal_sys::GDALSetRasterNoDataValueAsUInt64);
++            set_fn!(GDALSetRasterNoDataValueAsInt64, gdal_sys::GDALSetRasterNoDataValueAsInt64);
++            set_fn!(GDALGetDataTypeSizeBytes, gdal_sys::GDALGetDataTypeSizeBytes);
++            set_fn!(GDALVersionInfo, gdal_sys::GDALVersionInfo);
++            set_fn!(GDALRasterizeGeometries, gdal_sys::GDALRasterizeGeometries);
++            set_fn!(GDALFPolygonize, gdal_sys::GDALFPolygonize);
++            set_fn!(GDALPolygonize, gdal_sys::GDALPolygonize);
++
++            set_fn!(OSRNewSpatialReference, gdal_sys::OSRNewSpatialReference);
++            set_fn!(OSRSetFromUserInput, gdal_sys::OSRSetFromUserInput);
++            set_fn!(OSREPSGTreatsAsLatLong, gdal_sys::OSREPSGTreatsAsLatLong);
++            set_fn!(OSRGetDataAxisToSRSAxisMapping, gdal_sys::OSRGetDataAxisToSRSAxisMapping);
++            set_fn!(OSRGetAxisMappingStrategy, gdal_sys::OSRGetAxisMappingStrategy);
++            set_fn!(OSRSetAxisMappingStrategy, gdal_sys::OSRSetAxisMappingStrategy);
++            set_fn!(OSRDestroySpatialReference, gdal_sys::OSRDestroySpatialReference);
++            set_fn!(OSRExportToPROJJSON, gdal_sys::OSRExportToPROJJSON);
++            set_fn!(OSRClone, gdal_sys::OSRClone);
++            set_fn!(OSRRelease, gdal_sys::OSRRelease);
++
++            set_fn!(OGR_G_CreateFromWkb, gdal_sys::OGR_G_CreateFromWkb);
++            set_fn!(OGR_G_CreateFromWkt, gdal_sys::OGR_G_CreateFromWkt);
++            set_fn!(OGR_G_ExportToIsoWkb, gdal_sys::OGR_G_ExportToIsoWkb);
++            set_fn!(OGR_G_WkbSize, gdal_sys::OGR_G_WkbSize);
++            set_fn!(OGR_G_GetEnvelope, gdal_sys::OGR_G_GetEnvelope);
++            set_fn!(OGR_G_DestroyGeometry, gdal_sys::OGR_G_DestroyGeometry);
++
++            set_fn!(OGR_L_ResetReading, gdal_sys::OGR_L_ResetReading);
++            set_fn!(OGR_L_GetNextFeature, gdal_sys::OGR_L_GetNextFeature);
++            set_fn!(OGR_L_CreateField, gdal_sys::OGR_L_CreateField);
++            set_fn!(OGR_L_GetFeatureCount, gdal_sys::OGR_L_GetFeatureCount);
++            set_fn!(OGR_F_GetGeometryRef, gdal_sys::OGR_F_GetGeometryRef);
++            set_fn!(OGR_F_GetFieldIndex, gdal_sys::OGR_F_GetFieldIndex);
++            set_fn!(OGR_F_GetFieldAsDouble, gdal_sys::OGR_F_GetFieldAsDouble);
++            set_fn!(OGR_F_GetFieldAsInteger, gdal_sys::OGR_F_GetFieldAsInteger);
++            set_fn!(OGR_F_IsFieldSetAndNotNull, gdal_sys::OGR_F_IsFieldSetAndNotNull);
++            set_fn!(OGR_F_Destroy, gdal_sys::OGR_F_Destroy);
++            set_fn!(OGR_Fld_Create, gdal_sys::OGR_Fld_Create);
++            set_fn!(OGR_Fld_Destroy, gdal_sys::OGR_Fld_Destroy);
++
++            set_fn!(VSIFileFromMemBuffer, gdal_sys::VSIFileFromMemBuffer);
++            set_fn!(VSIFCloseL, gdal_sys::VSIFCloseL);
++            set_fn!(VSIUnlink, gdal_sys::VSIUnlink);
++            set_fn!(VSIGetMemFileBuffer, gdal_sys::VSIGetMemFileBuffer);
++            set_fn!(VSIFree, gdal_sys::VSIFree);
++            set_fn!(VSIMalloc, gdal_sys::VSIMalloc);
++
++            set_fn!(CPLSetThreadLocalConfigOption, gdal_sys::CPLSetThreadLocalConfigOption);
++            set_fn!(CPLGetLastErrorNo, gdal_sys::CPLGetLastErrorNo);
++            set_fn!(CPLGetLastErrorMsg, gdal_sys::CPLGetLastErrorMsg);
++            set_fn!(CPLErrorReset, gdal_sys::CPLErrorReset);
++        }
++
++        // Note: MEMDatasetCreate and VRT* functions are not available via gdal-sys.
++        // They use C++ mangled names that gdal-sys doesn't expose.
++
++        Ok(Self {
++            inner,
++            name: "gdal_sys".to_string(),
++        })
++    }
++
+     pub fn name(&self) -> &str {
+         &self.name
+     }
+diff --git a/c/sedona-gdal/src/global.rs b/c/sedona-gdal/src/global.rs
+index 9365ef8..a289198 100644
+--- a/c/sedona-gdal/src/global.rs
++++ b/c/sedona-gdal/src/global.rs
+@@ -65,11 +65,11 @@ impl GdalApiBuilder {
+     }
+ 
+     /// Build a [`GdalApi`] with the configured options.
+-    ///
+-    /// When `shared_library` is set, loads GDAL from that path. Otherwise,
+-    /// resolves symbols from the current process (with an optional
+-    /// compile-time version check when the `gdal-sys` feature is enabled).
+     pub fn build(&self) -> Result<GdalApi, GdalInitLibraryError> {
++        #[cfg(target_arch = "wasm32")]
++        let api = GdalApi::try_from_gdal_sys()?;
++
++        #[cfg(not(target_arch = "wasm32"))]
+         let api = if let Some(shared_library) = &self.shared_library {
+             GdalApi::try_from_shared_library(shared_library.clone())?
+         } else {
+@@ -78,9 +78,6 @@ impl GdalApiBuilder {
+ 
+         #[cfg(feature = "gdal-sys")]
+         let get_gdal_version_info = |arg: &str| unsafe {
+-            // Calling into `gdal-sys` also forces the linker to include GDAL
+-            // symbols, so that `try_from_current_process` (which resolves function pointers
+-            // via `dlsym` on the current process) can find them at runtime.
+             let c_arg = std::ffi::CString::new(arg).unwrap();
+             let c_version = gdal_sys::GDALVersionInfo(c_arg.as_ptr());
+             std::ffi::CStr::from_ptr(c_version)
+@@ -131,11 +128,11 @@ fn get_global_gdal_api() -> Result<&'static GdalApi, GdalInitLibraryError> {
+         .unwrap_or(&GdalApiBuilder::default())
+         .build()?;
+ 
+-    // Register all GDAL drivers once, immediately after loading symbols.
+-    // This mirrors georust/gdal's `_register_drivers()` pattern where
+-    // `GDALAllRegister` is called via `std::sync::Once` before any driver
+-    // lookup or dataset open. Here the `OnceLock` + `Mutex` already
+-    // guarantees this runs exactly once.
++    // Register all GDAL drivers once.
++    #[cfg(target_arch = "wasm32")]
++    unsafe { gdal_sys::GDALAllRegister(); }
++
++    #[cfg(not(target_arch = "wasm32"))]
+     unsafe {
+         let Some(gdal_all_register) = api.inner.GDALAllRegister else {
+             return Err(GdalInitLibraryError::LibraryError(
+diff --git a/c/sedona-gdal/src/lib.rs b/c/sedona-gdal/src/lib.rs
+index 0646a24..8fad0e0 100644
+--- a/c/sedona-gdal/src/lib.rs
++++ b/c/sedona-gdal/src/lib.rs
+@@ -16,6 +16,7 @@
+ // under the License.
+ 
+ // --- FFI layer ---
++#[cfg(not(target_arch = "wasm32"))]
+ pub(crate) mod dyn_load;
+ pub mod gdal_dyn_bindgen;
+ 
+diff --git a/c/sedona-proj/Cargo.toml b/c/sedona-proj/Cargo.toml
+index 072f15b..c6b7081 100644
+--- a/c/sedona-proj/Cargo.toml
++++ b/c/sedona-proj/Cargo.toml
+@@ -1,62 +1,37 @@
+-# Licensed to the Apache Software Foundation (ASF) under one
+-# or more contributor license agreements.  See the NOTICE file
+-# distributed with this work for additional information
+-# regarding copyright ownership.  The ASF licenses this file
+-# to you under the Apache License, Version 2.0 (the
+-# "License"); you may not use this file except in compliance
+-# with the License.  You may obtain a copy of the License at
+-#
+-#   http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing,
+-# software distributed under the License is distributed on an
+-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+-# KIND, either express or implied.  See the License for the
+-# specific language governing permissions and limitations
+-# under the License.
++# WASM-patched copy of sedona-proj.
++# Changes from upstream:
++# - libloading moved to cfg(not(wasm32)) target dependency
++# - dyn_load module gated behind cfg(not(wasm32))
++# - Workspace inheritance replaced with explicit versions for out-of-workspace use
++
+ [package]
+ name = "sedona-proj"
+-version.workspace = true
+-license.workspace = true
+-keywords.workspace = true
+-categories.workspace = true
+-authors.workspace = true
+-homepage.workspace = true
+-repository.workspace = true
+-description.workspace = true
+-readme.workspace = true
+-edition.workspace = true
+-rust-version.workspace = true
+-
+-[dev-dependencies]
+-approx = { workspace = true }
+-geo-types = { workspace = true }
+-rstest = { workspace = true }
+-wkb = { workspace = true }
+-sedona-testing = { workspace = true, features = ["criterion"] }
+-criterion = { workspace = true}
++version = "0.4.0"
++license = "Apache-2.0"
++edition = "2021"
++description = "Sedona PROJ integration (WASM-patched)"
+ 
+ [features]
+-default = [ "proj-sys" ]
+-proj-sys = [ "dep:proj-sys" ]
++default = ["proj-sys"]
++proj-sys = ["dep:proj-sys"]
+ 
+ [dependencies]
+-libloading = { workspace = true }
+-serde_json = { workspace = true }
+-arrow-schema = { workspace = true }
+-arrow-array = { workspace = true }
+-datafusion-common = { workspace = true }
+-datafusion-expr = { workspace = true }
+-geo-traits = { workspace = true }
++serde_json = "1"
++arrow-schema = "57.0.0"
++arrow-array = "57.0.0"
++datafusion-common = { version = "51.0.0", default-features = false }
++datafusion-expr = "51.0.0"
++geo-traits = "0.3.0"
+ proj-sys = { version = "0.26.0", optional = true }
+-sedona-common = { workspace = true }
+-sedona-expr = { workspace = true }
+-sedona-functions = { workspace = true }
+-sedona-geometry = { workspace = true }
+-sedona-schema = { workspace = true }
+-thiserror = { workspace = true }
+-wkb = { workspace = true }
++thiserror = "2"
++wkb = "0.9.2"
++
++# Sedona crates resolved relative to the prepared sedona-db tree.
++sedona-common = { version = "0.4.0", path = "../../rust/sedona-common" }
++sedona-expr = { version = "0.4.0", path = "../../rust/sedona-expr" }
++sedona-functions = { version = "0.4.0", path = "../../rust/sedona-functions" }
++sedona-geometry = { version = "0.4.0", path = "../../rust/sedona-geometry" }
++sedona-schema = { version = "0.4.0", path = "../../rust/sedona-schema" }
+ 
+-[[bench]]
+-name = "proj-functions"
+-harness = false
++[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
++libloading = "0.9"
+diff --git a/c/sedona-proj/src/lib.rs b/c/sedona-proj/src/lib.rs
+index 3cffe6f..632b116 100644
+--- a/c/sedona-proj/src/lib.rs
++++ b/c/sedona-proj/src/lib.rs
+@@ -14,6 +14,7 @@
+ // KIND, either express or implied.  See the License for the
+ // specific language governing permissions and limitations
+ // under the License.
++#[cfg(not(target_arch = "wasm32"))]
+ mod dyn_load;
+ pub mod error;
+ mod proj;
+diff --git a/c/sedona-proj/src/proj.rs b/c/sedona-proj/src/proj.rs
+index b267af4..5d36eae 100644
+--- a/c/sedona-proj/src/proj.rs
++++ b/c/sedona-proj/src/proj.rs
+@@ -42,28 +42,98 @@ use std::{
+     sync::Arc,
+ };
+ 
++#[cfg(not(target_arch = "wasm32"))]
+ use libloading::Library;
+ 
+-use crate::{dyn_load, error::SedonaProjError, proj_dyn_bindgen};
++#[cfg(not(target_arch = "wasm32"))]
++use crate::dyn_load;
++use crate::{error::SedonaProjError, proj_dyn_bindgen};
+ 
+-/// A macro to safely call a function pointer from a ProjApi
++/// Call a PROJ API function.
+ ///
+-/// Panics if the function was not available. A function not being available
+-/// would be a programming error on this library's part (creating the ProjApi
+-/// should error if a required function can't be found).
+-///
+-/// This macro helpfully allows searching for all API usage in the event that
+-/// we would like to revert the dynamic loading in favour of a simpler approach.
++/// On native: calls through the function pointer table (supports dlopen).
++/// On WASM: calls proj_sys functions directly (avoids transmute-related
++/// WASM indirect call signature mismatches).
++#[cfg(not(target_arch = "wasm32"))]
+ macro_rules! call_proj_api {
+     ($api:expr, $func:ident $(, $arg:expr)*) => {
+         if let Some(func) = $api.inner.$func {
+             func($($arg),*)
+         } else {
+-            panic!("{} function not available", stringify!(func))
++            panic!("{} function not available", stringify!($func))
+         }
+     }
+ }
+ 
++#[cfg(target_arch = "wasm32")]
++macro_rules! call_proj_api {
++    ($api:expr, $func:ident $(, $arg:expr)*) => {
++        wasm_proj::$func($($arg),*)
++    }
++}
++
++/// On WASM, call proj_sys functions directly. The function pointer table
++/// uses transmute which causes WASM indirect call signature mismatches.
++/// Instead we call proj_sys FFI functions directly with pointer casts.
++#[cfg(target_arch = "wasm32")]
++mod wasm_proj {
++    use super::*;
++
++    // Type aliases for casting between proj_dyn_bindgen and proj_sys opaque types
++    type Ctx = *mut proj_dyn_bindgen::pj_ctx;
++    type Pj = *mut proj_dyn_bindgen::PJ;
++    type Area = *mut proj_dyn_bindgen::PJ_AREA;
++
++    #[inline] fn ctx(p: Ctx) -> *mut proj_sys::pj_ctx { p as *mut _ }
++    #[inline] fn pj(p: Pj) -> *mut proj_sys::PJ { p as *mut _ }
++    #[inline] fn pj_const(p: *const proj_dyn_bindgen::PJ) -> *const proj_sys::PJ { p as *const _ }
++    #[inline] fn area(p: Area) -> *mut proj_sys::PJ_AREA { p as *mut _ }
++
++    pub unsafe fn proj_context_create() -> Ctx { proj_sys::proj_context_create() as Ctx }
++    pub unsafe fn proj_context_destroy(c: Ctx) { let _ = proj_sys::proj_context_destroy(ctx(c)); }
++    pub unsafe fn proj_context_errno(c: Ctx) -> i32 { proj_sys::proj_context_errno(ctx(c)) }
++    pub unsafe fn proj_context_errno_string(c: Ctx, e: i32) -> *const i8 {
++        proj_sys::proj_context_errno_string(ctx(c), e)
++    }
++    pub unsafe fn proj_context_set_database_path(c: Ctx, p: *const i8, a: *const *const i8, n: *const *const i8) -> i32 {
++        proj_sys::proj_context_set_database_path(ctx(c), p, a, n)
++    }
++    pub unsafe fn proj_context_set_search_paths(c: Ctx, n: i32, p: *const *const i8) {
++        proj_sys::proj_context_set_search_paths(ctx(c), n, p)
++    }
++    pub unsafe fn proj_create(c: Ctx, def: *const i8) -> Pj { proj_sys::proj_create(ctx(c), def) as Pj }
++    pub unsafe fn proj_create_crs_to_crs_from_pj(c: Ctx, src: *const proj_dyn_bindgen::PJ, dst: *const proj_dyn_bindgen::PJ, a: Area, opts: *const *const i8) -> Pj {
++        proj_sys::proj_create_crs_to_crs_from_pj(ctx(c), pj_const(src), pj_const(dst), area(a), opts) as Pj
++    }
++    pub unsafe fn proj_cs_get_axis_count(c: Ctx, cs: *const proj_dyn_bindgen::PJ) -> i32 {
++        proj_sys::proj_cs_get_axis_count(ctx(c), pj_const(cs))
++    }
++    pub unsafe fn proj_destroy(p: Pj) { let _ = proj_sys::proj_destroy(pj(p)); }
++    pub unsafe fn proj_errno(p: *const proj_dyn_bindgen::PJ) -> i32 { proj_sys::proj_errno(pj_const(p)) }
++    pub unsafe fn proj_errno_reset(p: Pj) { let _ = proj_sys::proj_errno_reset(pj(p) as *const _); }
++    pub unsafe fn proj_info() -> proj_sys::PJ_INFO { proj_sys::proj_info() }
++    pub unsafe fn proj_log_level(c: Ctx, level: proj_sys::PJ_LOG_LEVEL) -> proj_sys::PJ_LOG_LEVEL {
++        proj_sys::proj_log_level(ctx(c), level)
++    }
++    pub unsafe fn proj_normalize_for_visualization(c: Ctx, p: *const proj_dyn_bindgen::PJ) -> Pj {
++        proj_sys::proj_normalize_for_visualization(ctx(c), pj_const(p)) as Pj
++    }
++    pub unsafe fn proj_area_create() -> Area { proj_sys::proj_area_create() as Area }
++    pub unsafe fn proj_area_set_bbox(a: Area, w: f64, s: f64, e: f64, n: f64) {
++        proj_sys::proj_area_set_bbox(area(a), w, s, e, n)
++    }
++    pub unsafe fn proj_area_destroy(a: Area) { proj_sys::proj_area_destroy(area(a)); }
++    pub unsafe fn proj_trans(p: Pj, dir: proj_sys::PJ_DIRECTION, coord: proj_dyn_bindgen::PJ_COORD) -> proj_dyn_bindgen::PJ_COORD {
++        // PJ_COORD is a union of f64 arrays — identical layout in both modules
++        let c: proj_sys::PJ_COORD = std::mem::transmute(coord);
++        let r = proj_sys::proj_trans(pj(p), dir, c);
++        std::mem::transmute(r)
++    }
++    pub unsafe fn proj_as_projjson(c: Ctx, p: *const proj_dyn_bindgen::PJ, opts: *const *const i8) -> *const i8 {
++        proj_sys::proj_as_projjson(ctx(c), pj_const(p), opts)
++    }
++}
++
+ /// Wrapper around a PROJ Context
+ ///
+ /// A PROJ context the object used to configure data file locations, networking
+@@ -85,6 +155,7 @@ impl ProjContext {
+     /// pointers will be loaded. This works for most package manager-installed PROJ
+     /// distributions (and should error and not crash in the event of missing dependency
+     /// libraries and/or insufficient version).
++    #[cfg(not(target_arch = "wasm32"))]
+     pub(crate) fn try_from_shared_library(path: PathBuf) -> Result<Self, SedonaProjError> {
+         let api = ProjApi::try_from_shared_library(path)?;
+         api.check_version()?;
+@@ -460,6 +531,7 @@ struct ProjApi {
+     name: String,
+     /// Keep the dynamically loaded library alive for the lifetime of the function pointers.
+     /// `None` when using `proj-sys` (statically linked), `Some` when loaded from a shared library.
++    #[cfg(not(target_arch = "wasm32"))]
+     _lib: Option<Library>,
+ }
+ 
+@@ -470,6 +542,7 @@ impl Debug for ProjApi {
+ }
+ 
+ impl ProjApi {
++    #[cfg(not(target_arch = "wasm32"))]
+     fn try_from_shared_library(shared_library: PathBuf) -> Result<Arc<Self>, SedonaProjError> {
+         let (lib, inner) = dyn_load::load_proj_from_path(&shared_library)?;
+ 
+@@ -599,6 +672,7 @@ impl ProjApi {
+         Self {
+             inner,
+             name: "proj_sys".to_string(),
++            #[cfg(not(target_arch = "wasm32"))]
+             _lib: None,
+         }
+     }
+diff --git a/c/sedona-proj/src/transform.rs b/c/sedona-proj/src/transform.rs
+index 28e231f..75af6c4 100644
+--- a/c/sedona-proj/src/transform.rs
++++ b/c/sedona-proj/src/transform.rs
+@@ -108,11 +108,14 @@ impl ProjCrsEngineBuilder {
+ 
+     /// Build a [ProjCrsEngine] with the specified options
+     pub fn build(&self) -> Result<ProjCrsEngine, SedonaProjError> {
++        #[cfg(not(target_arch = "wasm32"))]
+         let mut ctx = if let Some(shared_library) = self.shared_library.clone() {
+             ProjContext::try_from_shared_library(shared_library)?
+         } else {
+             ProjContext::try_from_proj_sys()?
+         };
++        #[cfg(target_arch = "wasm32")]
++        let mut ctx = ProjContext::try_from_proj_sys()?;
+ 
+         if let Some(database_path) = &self.database_path {
+             ctx.set_database_path(database_path.to_string_lossy().as_ref())?;

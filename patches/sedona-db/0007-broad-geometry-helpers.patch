@@ -1,0 +1,696 @@
+diff --git a/rust/sedona-functions/src/lib.rs b/rust/sedona-functions/src/lib.rs
+index afabe9a..ecd6999 100644
+--- a/rust/sedona-functions/src/lib.rs
++++ b/rust/sedona-functions/src/lib.rs
+@@ -32,6 +32,8 @@ mod st_dimension;
+ mod st_dump;
+ pub mod st_envelope;
+ mod st_envelope_agg;
++mod st_expand;
++mod st_exteriorring;
+ mod st_flipcoordinates;
+ mod st_force_dim;
+ mod st_geography_cast;
+@@ -47,6 +49,7 @@ mod st_iscollection;
+ mod st_isempty;
+ mod st_knn;
+ mod st_makeline;
++mod st_makeenvelope;
+ mod st_numgeometries;
+ mod st_point;
+ mod st_pointn;
+diff --git a/rust/sedona-functions/src/register.rs b/rust/sedona-functions/src/register.rs
+index 002e2fb..edf4f85 100644
+--- a/rust/sedona-functions/src/register.rs
++++ b/rust/sedona-functions/src/register.rs
+@@ -49,6 +49,8 @@ pub fn default_function_set() -> FunctionSet {
+         crate::st_dimension::st_dimension_udf,
+         crate::st_dump::st_dump_udf,
+         crate::st_envelope::st_envelope_udf,
++        crate::st_expand::st_expand_udf,
++        crate::st_exteriorring::st_exteriorring_udf,
+         crate::st_flipcoordinates::st_flipcoordinates_udf,
+         crate::st_geography_cast::st_geogtogeometry_udf,
+         crate::st_geography_cast::st_geomtogeography_udf,
+@@ -71,6 +73,7 @@ pub fn default_function_set() -> FunctionSet {
+         crate::st_isempty::st_isempty_udf,
+         crate::st_knn::st_knn_udf,
+         crate::st_makeline::st_makeline_udf,
++        crate::st_makeenvelope::st_makeenvelope_udf,
+         crate::st_numgeometries::st_numgeometries_udf,
+         crate::st_point::st_geogpoint_udf,
+         crate::st_point::st_point_udf,
+diff --git a/rust/sedona-functions/src/st_expand.rs b/rust/sedona-functions/src/st_expand.rs
+new file mode 100644
+index 0000000..c792e55
+--- /dev/null
++++ b/rust/sedona-functions/src/st_expand.rs
+@@ -0,0 +1,278 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++use std::sync::Arc;
++
++use arrow_array::{builder::BinaryBuilder, types::Float64Type, Array, PrimitiveArray};
++use arrow_schema::DataType;
++use datafusion_common::{cast::as_float64_array, error::Result, DataFusionError};
++use datafusion_expr::{ColumnarValue, Volatility};
++use geo_traits::{Dimensions, GeometryTrait};
++use sedona_expr::{
++    item_crs::ItemCrsKernel,
++    scalar_udf::{SedonaScalarKernel, SedonaScalarUDF},
++};
++use sedona_geometry::{
++    bounds::{geo_traits_bounds_xy, geo_traits_bounds_z},
++    interval::{Interval, IntervalTrait},
++    wkb_factory::{
++        write_wkb_coord, write_wkb_polygon_header, write_wkb_polygon_ring_header,
++        WKB_MIN_PROBABLE_BYTES,
++    },
++};
++use sedona_schema::{
++    datatypes::{SedonaType, WKB_GEOMETRY},
++    matchers::ArgMatcher,
++};
++use wkb::reader::Wkb;
++
++use crate::executor::WkbExecutor;
++
++/// ST_Expand() scalar UDF
++///
++/// Expands the bounding rectangle of a geometry and returns it as a polygon.
++pub fn st_expand_udf() -> SedonaScalarUDF {
++    SedonaScalarUDF::new(
++        "st_expand",
++        ItemCrsKernel::wrap_impl(vec![
++            Arc::new(STExpand {
++                mode: ExpandMode::Uniform,
++            }),
++            Arc::new(STExpand {
++                mode: ExpandMode::PerAxis,
++            }),
++            Arc::new(STExpand {
++                mode: ExpandMode::PerAxisAndZ,
++            }),
++        ]),
++        Volatility::Immutable,
++    )
++}
++
++#[derive(Debug, Clone, Copy)]
++enum ExpandMode {
++    Uniform,
++    PerAxis,
++    PerAxisAndZ,
++}
++
++#[derive(Debug)]
++struct STExpand {
++    mode: ExpandMode,
++}
++
++impl SedonaScalarKernel for STExpand {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        let matcher = match self.mode {
++            ExpandMode::Uniform => ArgMatcher::new(
++                vec![ArgMatcher::is_geometry(), ArgMatcher::is_numeric()],
++                WKB_GEOMETRY,
++            ),
++            ExpandMode::PerAxis => ArgMatcher::new(
++                vec![
++                    ArgMatcher::is_geometry(),
++                    ArgMatcher::is_numeric(),
++                    ArgMatcher::is_numeric(),
++                ],
++                WKB_GEOMETRY,
++            ),
++            ExpandMode::PerAxisAndZ => ArgMatcher::new(
++                vec![
++                    ArgMatcher::is_geometry(),
++                    ArgMatcher::is_numeric(),
++                    ArgMatcher::is_numeric(),
++                    ArgMatcher::is_numeric(),
++                ],
++                WKB_GEOMETRY,
++            ),
++        };
++
++        matcher.match_args(args)
++    }
++
++    fn invoke_batch(
++        &self,
++        arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        let executor = WkbExecutor::new(arg_types, args);
++        let mut builder = BinaryBuilder::with_capacity(
++            executor.num_iterations(),
++            WKB_MIN_PROBABLE_BYTES * 6 * executor.num_iterations(),
++        );
++
++        let delta_arrays = args[1..]
++            .iter()
++            .map(|arg| arg.cast_to(&DataType::Float64, None)?.to_array(executor.num_iterations()))
++            .collect::<Result<Vec<Arc<dyn Array>>>>()?;
++        let delta_f64_arrays = delta_arrays
++            .iter()
++            .map(|array| as_float64_array(array))
++            .collect::<Result<Vec<_>>>()?;
++        let mut deltas = ExpandDeltas::new(self.mode, &delta_f64_arrays);
++
++        executor.execute_wkb_void(|maybe_wkb| {
++            match (maybe_wkb, deltas.next().unwrap()) {
++                (Some(wkb), Some((delta_x, delta_y, delta_z))) => {
++                    invoke_scalar(&wkb, delta_x, delta_y, delta_z, &mut builder)?;
++                    builder.append_value([]);
++                }
++                _ => builder.append_null(),
++            }
++            Ok(())
++        })?;
++
++        executor.finish(Arc::new(builder.finish()))
++    }
++}
++
++struct ExpandDeltas<'a> {
++    mode: ExpandMode,
++    index: usize,
++    delta_x: &'a PrimitiveArray<Float64Type>,
++    delta_y: Option<&'a PrimitiveArray<Float64Type>>,
++    delta_z: Option<&'a PrimitiveArray<Float64Type>>,
++}
++
++impl<'a> ExpandDeltas<'a> {
++    fn new(mode: ExpandMode, arrays: &[&'a PrimitiveArray<Float64Type>]) -> Self {
++        match mode {
++            ExpandMode::Uniform => Self {
++                mode,
++                index: 0,
++                delta_x: arrays[0],
++                delta_y: None,
++                delta_z: None,
++            },
++            ExpandMode::PerAxis => Self {
++                mode,
++                index: 0,
++                delta_x: arrays[0],
++                delta_y: Some(arrays[1]),
++                delta_z: None,
++            },
++            ExpandMode::PerAxisAndZ => Self {
++                mode,
++                index: 0,
++                delta_x: arrays[0],
++                delta_y: Some(arrays[1]),
++                delta_z: Some(arrays[2]),
++            },
++        }
++    }
++}
++
++impl Iterator for ExpandDeltas<'_> {
++    type Item = Option<(f64, f64, Option<f64>)>;
++
++    fn next(&mut self) -> Option<Self::Item> {
++        let i = self.index;
++        self.index += 1;
++
++        let is_null = self.delta_x.is_null(i)
++            || self.delta_y.is_some_and(|array| array.is_null(i))
++            || self.delta_z.is_some_and(|array| array.is_null(i));
++        if is_null {
++            return Some(None);
++        }
++
++        let delta_x = self.delta_x.value(i);
++        Some(match self.mode {
++            ExpandMode::Uniform => Some((delta_x, delta_x, Some(delta_x))),
++            ExpandMode::PerAxis => Some((delta_x, self.delta_y.unwrap().value(i), None)),
++            ExpandMode::PerAxisAndZ => Some((
++                delta_x,
++                self.delta_y.unwrap().value(i),
++                Some(self.delta_z.unwrap().value(i)),
++            )),
++        })
++    }
++}
++
++fn invoke_scalar(
++    wkb: &Wkb,
++    delta_x: f64,
++    delta_y: f64,
++    delta_z: Option<f64>,
++    writer: &mut impl std::io::Write,
++) -> Result<()> {
++    let bounds = geo_traits_bounds_xy(wkb).map_err(|e| DataFusionError::External(Box::new(e)))?;
++    let output_dims = match wkb.dim() {
++        Dimensions::Xyz | Dimensions::Xyzm => Dimensions::Xyz,
++        _ => Dimensions::Xy,
++    };
++
++    if bounds.is_empty() {
++        return write_wkb_polygon_header(writer, output_dims, 0)
++            .map_err(|e| DataFusionError::External(Box::new(e)));
++    }
++
++    let x = bounds.x().expand_by(delta_x);
++    let y = bounds.y().expand_by(delta_y);
++    let z = if output_dims == Dimensions::Xyz {
++        let z_bounds =
++            geo_traits_bounds_z(wkb).map_err(|e| DataFusionError::External(Box::new(e)))?;
++        Some(match delta_z {
++            Some(delta) => z_bounds.expand_by(delta),
++            None => z_bounds,
++        })
++    } else {
++        None
++    };
++
++    write_expanded_envelope(writer, output_dims, x.lo(), y.lo(), x.hi(), y.hi(), z.as_ref())
++}
++
++fn write_expanded_envelope(
++    writer: &mut impl std::io::Write,
++    dims: Dimensions,
++    min_x: f64,
++    min_y: f64,
++    max_x: f64,
++    max_y: f64,
++    z: Option<&Interval>,
++) -> Result<()> {
++    write_wkb_polygon_header(writer, dims, 1)
++        .map_err(|e| DataFusionError::External(Box::new(e)))?;
++    write_wkb_polygon_ring_header(writer, 5)
++        .map_err(|e| DataFusionError::External(Box::new(e)))?;
++
++    if let Some(z) = z {
++        let min_z = z.lo();
++        let max_z = z.hi();
++        for coord in [
++            (min_x, min_y, min_z),
++            (min_x, max_y, min_z),
++            (max_x, max_y, max_z),
++            (max_x, min_y, max_z),
++            (min_x, min_y, min_z),
++        ] {
++            write_wkb_coord(writer, coord).map_err(|e| DataFusionError::External(Box::new(e)))?;
++        }
++    } else {
++        for coord in [
++            (min_x, min_y),
++            (min_x, max_y),
++            (max_x, max_y),
++            (max_x, min_y),
++            (min_x, min_y),
++        ] {
++            write_wkb_coord(writer, coord).map_err(|e| DataFusionError::External(Box::new(e)))?;
++        }
++    }
++
++    Ok(())
++}
+diff --git a/rust/sedona-functions/src/st_exteriorring.rs b/rust/sedona-functions/src/st_exteriorring.rs
+new file mode 100644
+index 0000000..49e4ab3
+--- /dev/null
++++ b/rust/sedona-functions/src/st_exteriorring.rs
+@@ -0,0 +1,106 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++use std::sync::Arc;
++
++use arrow_array::builder::BinaryBuilder;
++use datafusion_common::{error::Result, DataFusionError};
++use datafusion_expr::{ColumnarValue, Volatility};
++use geo_traits::{GeometryTrait, LineStringTrait, PolygonTrait};
++use sedona_expr::{
++    item_crs::ItemCrsKernel,
++    scalar_udf::{SedonaScalarKernel, SedonaScalarUDF},
++};
++use sedona_geometry::wkb_factory::{
++    write_wkb_coord_trait, write_wkb_linestring_header, WKB_MIN_PROBABLE_BYTES,
++};
++use sedona_schema::{
++    datatypes::{SedonaType, WKB_GEOMETRY},
++    matchers::ArgMatcher,
++};
++use wkb::reader::Wkb;
++
++use crate::executor::WkbExecutor;
++
++/// ST_ExteriorRing() scalar UDF
++///
++/// Returns the exterior ring of a polygon as a LINESTRING.
++pub fn st_exteriorring_udf() -> SedonaScalarUDF {
++    SedonaScalarUDF::new(
++        "st_exteriorring",
++        ItemCrsKernel::wrap_impl(vec![Arc::new(STExteriorRing {})]),
++        Volatility::Immutable,
++    )
++}
++
++#[derive(Debug)]
++struct STExteriorRing {}
++
++impl SedonaScalarKernel for STExteriorRing {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        let matcher = ArgMatcher::new(vec![ArgMatcher::is_geometry()], WKB_GEOMETRY);
++        matcher.match_args(args)
++    }
++
++    fn invoke_batch(
++        &self,
++        arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        let executor = WkbExecutor::new(arg_types, args);
++        let mut builder = BinaryBuilder::with_capacity(
++            executor.num_iterations(),
++            WKB_MIN_PROBABLE_BYTES * executor.num_iterations(),
++        );
++
++        executor.execute_wkb_void(|maybe_wkb| {
++            match maybe_wkb {
++                Some(wkb) => {
++                    if invoke_scalar(&wkb, &mut builder)? {
++                        builder.append_value([]);
++                    } else {
++                        builder.append_null();
++                    }
++                }
++                None => builder.append_null(),
++            }
++
++            Ok(())
++        })?;
++
++        executor.finish(Arc::new(builder.finish()))
++    }
++}
++
++fn invoke_scalar(geom: &Wkb, writer: &mut impl std::io::Write) -> Result<bool> {
++    match geom.as_type() {
++        geo_traits::GeometryType::Polygon(polygon) => {
++            if let Some(exterior) = polygon.exterior() {
++                write_wkb_linestring_header(writer, exterior.dim(), exterior.num_coords())
++                    .map_err(|e| DataFusionError::Execution(e.to_string()))?;
++                exterior.coords().try_for_each(|coord| {
++                    write_wkb_coord_trait(writer, &coord)
++                        .map_err(|e| DataFusionError::Execution(e.to_string()))
++                })?;
++            } else {
++                write_wkb_linestring_header(writer, geom.dim(), 0)
++                    .map_err(|e| DataFusionError::Execution(e.to_string()))?;
++            }
++            Ok(true)
++        }
++        _ => Ok(false),
++    }
++}
+diff --git a/rust/sedona-functions/src/st_makeenvelope.rs b/rust/sedona-functions/src/st_makeenvelope.rs
+new file mode 100644
+index 0000000..daa76a8
+--- /dev/null
++++ b/rust/sedona-functions/src/st_makeenvelope.rs
+@@ -0,0 +1,132 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++use std::sync::Arc;
++
++use arrow_array::{builder::BinaryBuilder, Array};
++use arrow_schema::DataType;
++use datafusion_common::{cast::as_float64_array, error::Result, scalar::ScalarValue};
++use datafusion_expr::{ColumnarValue, Volatility};
++use sedona_expr::scalar_udf::{SedonaScalarKernel, SedonaScalarUDF};
++use sedona_geometry::wkb_factory::{wkb_rect, WKB_MIN_PROBABLE_BYTES};
++use sedona_schema::{
++    datatypes::{SedonaType, WKB_GEOMETRY},
++    matchers::ArgMatcher,
++};
++
++use crate::{executor::WkbExecutor, st_setsrid::SRIDifiedKernel};
++
++/// ST_MakeEnvelope() scalar UDF implementation
++///
++/// Creates a rectangular polygon from min/max coordinates.
++pub fn st_makeenvelope_udf() -> SedonaScalarUDF {
++    let kernel = Arc::new(STMakeEnvelope {});
++    let sridified_kernel = Arc::new(SRIDifiedKernel::new(kernel.clone()));
++
++    SedonaScalarUDF::new(
++        "st_makeenvelope",
++        vec![sridified_kernel, kernel],
++        Volatility::Immutable,
++    )
++}
++
++#[derive(Debug)]
++struct STMakeEnvelope {}
++
++impl SedonaScalarKernel for STMakeEnvelope {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        let matcher = ArgMatcher::new(
++            vec![
++                ArgMatcher::is_numeric(),
++                ArgMatcher::is_numeric(),
++                ArgMatcher::is_numeric(),
++                ArgMatcher::is_numeric(),
++            ],
++            WKB_GEOMETRY,
++        );
++        matcher.match_args(args)
++    }
++
++    fn invoke_batch(
++        &self,
++        arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        let executor = WkbExecutor::new(arg_types, args);
++        let coord_values = args
++            .iter()
++            .map(|arg| arg.cast_to(&DataType::Float64, None))
++            .collect::<Result<Vec<_>>>()?;
++
++        let all_scalars = coord_values
++            .iter()
++            .all(|value| matches!(value, ColumnarValue::Scalar(_)));
++
++        if all_scalars {
++            let scalar_coords = coord_values
++                .iter()
++                .map(|value| match value {
++                    ColumnarValue::Scalar(ScalarValue::Float64(v)) => Ok(*v),
++                    _ => unreachable!("expected Float64 scalar"),
++                })
++                .collect::<Result<Vec<_>>>()?;
++
++            if scalar_coords.iter().any(|coord| coord.is_none()) {
++                return Ok(ScalarValue::Binary(None).into());
++            }
++
++            let wkb = wkb_rect(
++                scalar_coords[0].unwrap(),
++                scalar_coords[1].unwrap(),
++                scalar_coords[2].unwrap(),
++                scalar_coords[3].unwrap(),
++            )
++            .map_err(|err| datafusion_common::DataFusionError::External(Box::new(err)))?;
++            return Ok(ScalarValue::Binary(Some(wkb)).into());
++        }
++
++        let coord_arrays = coord_values
++            .iter()
++            .map(|value| value.to_array(executor.num_iterations()))
++            .collect::<Result<Vec<Arc<dyn Array>>>>()?;
++        let coord_f64_arrays = coord_arrays
++            .iter()
++            .map(|array| as_float64_array(array))
++            .collect::<Result<Vec<_>>>()?;
++
++        let mut builder = BinaryBuilder::with_capacity(
++            executor.num_iterations(),
++            WKB_MIN_PROBABLE_BYTES * 5 * executor.num_iterations(),
++        );
++
++        for row_idx in 0..executor.num_iterations() {
++            if coord_f64_arrays.iter().any(|array| array.is_null(row_idx)) {
++                builder.append_null();
++                continue;
++            }
++
++            let min_x = coord_f64_arrays[0].value(row_idx);
++            let min_y = coord_f64_arrays[1].value(row_idx);
++            let max_x = coord_f64_arrays[2].value(row_idx);
++            let max_y = coord_f64_arrays[3].value(row_idx);
++            let wkb = wkb_rect(min_x, min_y, max_x, max_y)
++                .map_err(|err| datafusion_common::DataFusionError::External(Box::new(err)))?;
++            builder.append_value(wkb);
++        }
++
++        Ok(ColumnarValue::Array(Arc::new(builder.finish())))
++    }
++}
+diff --git a/rust/sedona-geo/src/lib.rs b/rust/sedona-geo/src/lib.rs
+index 949c4fc..35152c5 100644
+--- a/rust/sedona-geo/src/lib.rs
++++ b/rust/sedona-geo/src/lib.rs
+@@ -23,6 +23,7 @@ mod st_centroid;
+ pub mod st_concavehull;
+ mod st_distance;
+ mod st_dwithin;
++mod st_geomfromgeojson;
+ mod st_intersection_agg;
+ mod st_intersects;
+ mod st_length;
+diff --git a/rust/sedona-geo/src/register.rs b/rust/sedona-geo/src/register.rs
+index 6c9b5d5..8679898 100644
+--- a/rust/sedona-geo/src/register.rs
++++ b/rust/sedona-geo/src/register.rs
+@@ -45,6 +45,7 @@ pub fn scalar_kernels() -> Vec<(&'static str, Vec<ScalarKernelRef>)> {
+         "st_centroid" => crate::st_centroid::st_centroid_impl,
+         "st_distance" => crate::st_distance::st_distance_impl,
+         "st_dwithin" => crate::st_dwithin::st_dwithin_impl,
++        "st_geomfromgeojson" => crate::st_geomfromgeojson::st_geomfromgeojson_impl,
+         "st_intersects" => crate::st_intersects::st_intersects_impl,
+         "st_length" => crate::st_length::st_length_impl,
+         "st_lineinterpolatepoint" => crate::st_line_interpolate_point::st_line_interpolate_point_impl,
+diff --git a/rust/sedona-geo/src/st_geomfromgeojson.rs b/rust/sedona-geo/src/st_geomfromgeojson.rs
+new file mode 100644
+index 0000000..e066cc8
+--- /dev/null
++++ b/rust/sedona-geo/src/st_geomfromgeojson.rs
+@@ -0,0 +1,90 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++use std::{str::FromStr, sync::Arc};
++
++use arrow_array::builder::BinaryBuilder;
++use arrow_schema::DataType;
++use datafusion_common::error::{DataFusionError, Result};
++use datafusion_common::{cast::as_string_view_array, exec_datafusion_err};
++use datafusion_expr::ColumnarValue;
++use geo_types::Geometry;
++use sedona_expr::scalar_udf::{ScalarKernelRef, SedonaScalarKernel};
++use sedona_functions::executor::WkbExecutor;
++use sedona_geometry::wkb_factory::WKB_MIN_PROBABLE_BYTES;
++use sedona_schema::{
++    datatypes::{SedonaType, WKB_GEOMETRY},
++    matchers::ArgMatcher,
++};
++use wkb::{writer::WriteOptions, Endianness};
++
++/// ST_GeomFromGeoJSON() kernel implementation
++pub fn st_geomfromgeojson_impl() -> Vec<ScalarKernelRef> {
++    vec![Arc::new(STGeomFromGeoJSON {})]
++}
++
++#[derive(Debug)]
++struct STGeomFromGeoJSON {}
++
++impl SedonaScalarKernel for STGeomFromGeoJSON {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        let matcher = ArgMatcher::new(vec![ArgMatcher::is_string()], WKB_GEOMETRY);
++        matcher.match_args(args)
++    }
++
++    fn invoke_batch(
++        &self,
++        arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        let executor = WkbExecutor::new(arg_types, args);
++        let arg_array = args[0]
++            .cast_to(&DataType::Utf8View, None)?
++            .to_array(executor.num_iterations())?;
++
++        let mut builder = BinaryBuilder::with_capacity(
++            executor.num_iterations(),
++            WKB_MIN_PROBABLE_BYTES * executor.num_iterations(),
++        );
++
++        for item in as_string_view_array(&arg_array)? {
++            if let Some(geojson_str) = item {
++                invoke_scalar(geojson_str, &mut builder)?;
++                builder.append_value([]);
++            } else {
++                builder.append_null();
++            }
++        }
++
++        executor.finish(Arc::new(builder.finish()))
++    }
++}
++
++fn invoke_scalar(geojson_str: &str, builder: &mut BinaryBuilder) -> Result<()> {
++    let geojson = geojson::GeoJson::from_str(geojson_str)
++        .map_err(|err| exec_datafusion_err!("GeoJSON parse error: {err}"))?;
++    let geometry = Geometry::<f64>::try_from(geojson)
++        .map_err(|err| exec_datafusion_err!("GeoJSON conversion error: {err}"))?;
++
++    wkb::writer::write_geometry(
++        builder,
++        &geometry,
++        &WriteOptions {
++            endianness: Endianness::LittleEndian,
++        },
++    )
++    .map_err(|err| DataFusionError::External(Box::new(err)))
++}

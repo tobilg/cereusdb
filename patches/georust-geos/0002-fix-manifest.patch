@@ -1,0 +1,9 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 654d2df..a471853 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -127,3 +127,4 @@ version = "0.2"
+ 
+ [dependencies.wkt]
+ version = "0.10.3"
++optional = true

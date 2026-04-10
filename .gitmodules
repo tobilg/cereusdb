@@ -1,0 +1,30 @@
+[submodule "deps/sedona-db"]
+	path = deps/sedona-db
+	url = https://github.com/apache/sedona-db.git
+[submodule "deps/geos"]
+	path = deps/geos
+	url = https://github.com/libgeos/geos.git
+[submodule "deps/proj"]
+	path = deps/proj
+	url = https://github.com/OSGeo/PROJ.git
+[submodule "deps/gdal"]
+	path = deps/gdal
+	url = https://github.com/OSGeo/gdal.git
+[submodule "deps/expat"]
+	path = deps/expat
+	url = https://github.com/libexpat/libexpat.git
+[submodule "deps/zlib"]
+	path = deps/zlib
+	url = https://github.com/madler/zlib.git
+[submodule "deps/georust-geos"]
+	path = deps/georust-geos
+	url = https://github.com/georust/geos.git
+[submodule "deps/georust-proj"]
+	path = deps/georust-proj
+	url = https://github.com/georust/proj.git
+[submodule "deps/georust-gdal"]
+	path = deps/georust-gdal
+	url = https://github.com/georust/gdal.git
+[submodule "deps/sqlite-src"]
+	path = deps/sqlite-src
+	url = https://github.com/sqlite/sqlite.git

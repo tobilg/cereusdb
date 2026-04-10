@@ -1,0 +1,15 @@
+[package]
+name = "cereusdb-object-store"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "WASM-compatible object store adapter for CereusDB"
+
+[dependencies]
+object_store = { workspace = true }
+url = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+log = { workspace = true }
+datafusion = { workspace = true, default-features = false }

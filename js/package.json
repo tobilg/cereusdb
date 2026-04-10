@@ -1,0 +1,44 @@
+{
+  "name": "cereusdb-js-internal",
+  "version": "0.4.0",
+  "private": true,
+  "description": "CereusDB — browser-side spatial SQL powered by Apache SedonaDB",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "pkg/"
+  ],
+  "scripts": {
+    "build": "cd .. && make build-js",
+    "package:minimal": "cd .. && make package-minimal",
+    "package:standard": "cd .. && make package-standard",
+    "package:global": "cd .. && make package-global",
+    "package:full": "cd .. && make package-full",
+    "test": "npm run test:full",
+    "test:minimal": "CEREUSDB_PACKAGE=minimal vitest run tests/core.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/knn.test.ts tests/random-geometry.test.ts",
+    "test:standard": "CEREUSDB_PACKAGE=standard vitest run tests/core.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/proj.test.ts tests/knn.test.ts tests/random-geometry.test.ts",
+    "test:global": "CEREUSDB_PACKAGE=global vitest run tests/core.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/proj.test.ts tests/knn.test.ts tests/random-geometry.test.ts tests/s2.test.ts",
+    "test:full": "CEREUSDB_PACKAGE=full vitest run tests/core.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/proj.test.ts tests/knn.test.ts tests/random-geometry.test.ts tests/raster.test.ts tests/s2.test.ts",
+    "test:geos": "npm run test:minimal",
+    "test:geos-proj": "npm run test:standard",
+    "test:geos-proj-s2": "npm run test:global",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "geospatial", "gis", "spatial", "sql", "wasm", "webassembly",
+    "geoparquet", "arrow", "datafusion"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tobilg/cereusdb"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "apache-arrow": "^21.1.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.4"
+  }
+}

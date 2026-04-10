@@ -1,0 +1,52 @@
+{
+  "name": "@cereusdb/global",
+  "version": "0.0.1",
+  "description": "Global CereusDB browser package with GEOS, PROJ, and S2 geography support",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./wasm": "./dist/wasm/cereusdb_bg.wasm",
+    "./wasm/*": "./dist/wasm/*"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-npm-package.mjs global",
+    "prepack": "npm run build",
+    "test": "cd ../../js && npm run test:global"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "cereusdb",
+    "geospatial",
+    "spatial",
+    "sql",
+    "wasm",
+    "webassembly",
+    "s2"
+  ],
+  "author": "tobilg",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tobilg/cereusdb",
+    "directory": "packages/global"
+  },
+  "bugs": {
+    "url": "https://github.com/tobilg/cereusdb/issues"
+  },
+  "homepage": "https://github.com/tobilg/cereusdb#readme",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

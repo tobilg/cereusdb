@@ -1,0 +1,124 @@
+diff --git a/src/context_handle.rs b/src/context_handle.rs
+--- a/src/context_handle.rs
++++ b/src/context_handle.rs
+@@ -2,11 +2,9 @@
+ use crate::error::{Error, GResult};
+ use crate::functions::errcheck;
+ use geos_sys::*;
+-use libc::{c_char, c_void, strlen};
++use std::ffi::{c_char, c_void, CStr};
+ use std::convert::TryFrom;
+-use std::ffi::CStr;
+ use std::ptr::NonNull;
+-use std::slice;
+ use std::sync::Mutex;
+ 
+ thread_local!(
+@@ -35,9 +33,9 @@
+     let inner_context: &InnerContext = &*(data.cast());
+ 
+     if let Ok(callback) = inner_context.callback.lock() {
+-        let bytes = slice::from_raw_parts(message.cast::<u8>(), strlen(message) + 1);
+-        let s = CStr::from_bytes_with_nul_unchecked(bytes);
+-        let notif = s.to_str().expect("invalid CStr -> &str conversion");
++        let notif = CStr::from_ptr(message)
++            .to_str()
++            .expect("invalid CStr -> &str conversion");
+         callback(notif);
+         if let Ok(mut last) = inner_context.last.lock() {
+             *last = Some(notif.to_owned());
+
+diff --git a/src/enums.rs b/src/enums.rs
+--- a/src/enums.rs
++++ b/src/enums.rs
+@@ -1,4 +1,4 @@
+-use libc::{c_int, size_t};
++use std::ffi::c_int;
+ 
+ use std::convert::TryFrom;
+ 
+@@ -316,10 +316,10 @@
+     M,
+ }
+ 
+-impl TryFrom<size_t> for Ordinate {
++impl TryFrom<usize> for Ordinate {
+     type Error = crate::error::Error;
+ 
+-    fn try_from(ordinate: size_t) -> Result<Self, Self::Error> {
++    fn try_from(ordinate: usize) -> Result<Self, Self::Error> {
+         match ordinate {
+             0 => Ok(Self::X),
+             1 => Ok(Self::Y),
+
+diff --git a/src/geometry.rs b/src/geometry.rs
+--- a/src/geometry.rs
++++ b/src/geometry.rs
+@@ -12,7 +12,7 @@
+ use crate::{AsRaw, AsRawMut, BufferParams, CoordSeq, PreparedGeometry, WKTWriter};
+ use geos_sys::*;
+ use std::borrow::Borrow;
+-use std::ffi::CString;
++use std::ffi::{c_double, c_int, c_void, CString};
+ use std::marker::PhantomData;
+ use std::ptr::NonNull;
+ use std::{self, str};
+@@ -1885,7 +1885,7 @@
+     /// assert_eq!(point_geom.get_srid()?, 4326);
+     /// # Ok::<(), geos::Error>(())
+     /// ```
+-    fn get_srid(&self) -> GResult<libc::c_int> {
++    fn get_srid(&self) -> GResult<c_int> {
+         with_context(|ctx| unsafe {
+             // No need to wrap this one, as 0 is a valid SRID
+             let ret = GEOSGetSRID_r(ctx.as_raw(), self.as_raw());
+@@ -2610,7 +2610,7 @@
+         Self { closure, err: None }
+     }
+ 
+-    fn as_mut_void(&mut self) -> *mut libc::c_void {
++    fn as_mut_void(&mut self) -> *mut c_void {
+         self as *mut _ as *mut _
+     }
+ }
+@@ -2619,10 +2619,10 @@
+ impl<F: FnMut(f64, f64) -> Result<(f64, f64), E>, E: From<Error>> Trampoline<F, E> {
+     fn get_xy_callback(&self) -> GEOSTransformXYCallback {
+         unsafe extern "C" fn transform_trampoline<F, E>(
+-            x: *mut libc::c_double,
+-            y: *mut libc::c_double,
+-            user_data: *mut libc::c_void,
+-        ) -> libc::c_int
++            x: *mut c_double,
++            y: *mut c_double,
++            user_data: *mut c_void,
++        ) -> c_int
+         where
+             F: FnMut(f64, f64) -> Result<(f64, f64), E>,
+             E: From<Error>,
+@@ -2650,11 +2650,11 @@
+ impl<F: FnMut(f64, f64, f64) -> Result<(f64, f64, f64), E>, E: From<Error>> Trampoline<F, E> {
+     fn get_xyz_callback(&self) -> GEOSTransformXYZCallback {
+         unsafe extern "C" fn transform_trampoline<F, E>(
+-            x: *mut libc::c_double,
+-            y: *mut libc::c_double,
+-            z: *mut libc::c_double,
+-            user_data: *mut libc::c_void,
+-        ) -> libc::c_int
++            x: *mut c_double,
++            y: *mut c_double,
++            z: *mut c_double,
++            user_data: *mut c_void,
++        ) -> c_int
+         where
+             F: FnMut(f64, f64, f64) -> Result<(f64, f64, f64), E>,
+             E: From<Error>,
+@@ -2988,7 +2988,7 @@
+     /// assert_eq!(point_geom.get_srid()?, 4326);
+     /// # Ok::<(), geos::Error>(())
+     /// ```
+-    pub fn set_srid(&mut self, srid: libc::c_int) {
++    pub fn set_srid(&mut self, srid: c_int) {
+         with_context(|ctx| unsafe { GEOSSetSRID_r(ctx.as_raw(), self.as_raw_mut(), srid) });
+     }
+ 

@@ -1,0 +1,89 @@
+[package]
+name = "cereusdb"
+version = "0.4.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "CereusDB - browser-side spatial SQL powered by Apache SedonaDB"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+async-trait = { workspace = true }
+# WASM bindings
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console", "Window", "WorkerGlobalScope",
+    "Request", "RequestInit", "RequestMode", "Response", "Headers",
+] }
+console_error_panic_hook = "0.1"
+getrandom_v02 = { package = "getrandom", version = "0.2", features = ["js"] }
+getrandom_v03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom_v04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+chrono = { workspace = true, features = ["wasmbind"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { workspace = true }
+serde-wasm-bindgen = "0.6"
+log = { workspace = true }
+
+# SedonaDB crates (direct path refs into submodule — resolved by sedona-db's workspace)
+sedona-common = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-common" }
+sedona-functions = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-functions" }
+sedona-expr = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-expr" }
+sedona-schema = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-schema" }
+sedona-geometry = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-geometry" }
+sedona-geo = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-geo" }
+sedona-spatial-join = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-spatial-join", optional = true }
+sedona-testing = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-testing", optional = true }
+sedona-raster = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-raster", optional = true }
+sedona-raster-functions = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-raster-functions", default-features = false, optional = true }
+cereusdb-object-store = { path = "../cereusdb-object-store" }
+
+# Optional C-backed crates
+sedona-geos = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/c/sedona-geos", optional = true }
+sedona-proj = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/c/sedona-proj", default-features = false, optional = true }
+sedona-gdal = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/c/sedona-gdal", default-features = false, optional = true }
+sedona-s2geography = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/c/sedona-s2geography", optional = true }
+gdal-sys = { version = "0.12.0", optional = true }
+
+# DataFusion
+datafusion = { workspace = true, default-features = false, features = ["sql"] }
+datafusion-common = { workspace = true }
+datafusion-expr = { workspace = true }
+
+# Arrow
+arrow = { workspace = true }
+arrow-array = { workspace = true }
+arrow-ipc = { workspace = true }
+arrow-schema = { workspace = true }
+arrow-json = { workspace = true }
+
+# Parquet (pure-Rust backends only)
+parquet = { version = "57.0.0", default-features = false, features = ["arrow", "snap", "brotli", "flate2-zlib-rs", "lz4"] }
+
+# Other
+bytes = { workspace = true }
+futures = { workspace = true }
+object_store = { workspace = true }
+url = { workspace = true }
+geojson = { workspace = true }
+geo-types = { workspace = true }
+wkb = { workspace = true }
+
+[features]
+default = ["random-geometry"]
+random-geometry = ["dep:sedona-testing"]
+spatial-join = ["dep:sedona-spatial-join"]
+geos = ["dep:sedona-geos", "spatial-join"]
+proj = ["dep:sedona-proj", "sedona-proj/proj-sys"]
+s2 = ["dep:sedona-s2geography"]
+gdal = [
+    "dep:sedona-gdal",
+    "sedona-gdal/gdal-sys",
+    "dep:sedona-raster",
+    "dep:sedona-raster-functions",
+    "sedona-raster-functions/spatial-predicates",
+    "dep:gdal-sys",
+]

@@ -1,0 +1,210 @@
+diff --git a/c/sedona-proj/build.rs b/c/sedona-proj/build.rs
+index 5186777a..a43e85d2 100644
+--- a/c/sedona-proj/build.rs
++++ b/c/sedona-proj/build.rs
+@@ -12,15 +12,22 @@ fn main() {
+         return;
+     }
+ 
++    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set"));
++    let generated_rs = out_dir.join("embedded_proj_db.rs");
++
++    if env::var_os("CARGO_FEATURE_PROJ_SYS").is_none() {
++        fs::write(&generated_rs, "pub static PROJ_DB: &[u8] = &[];\n")
++            .expect("Failed to write empty embedded proj.db module");
++        return;
++    }
++
+     let proj_db_path = env::var("SEDONA_WASM_PROJ_DB_PATH")
+         .expect("SEDONA_WASM_PROJ_DB_PATH must point to proj.db for wasm32 builds");
+     let sqlite_include_dir = env::var("SQLITE3_INCLUDE_DIR")
+         .expect("SQLITE3_INCLUDE_DIR must point to the SQLite headers for wasm32 builds");
+-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set"));
+ 
+     println!("cargo:rerun-if-changed={proj_db_path}");
+ 
+-    let generated_rs = out_dir.join("embedded_proj_db.rs");
+     let generated = format!(
+         "pub static PROJ_DB: &[u8] = include_bytes!(r#\"{}\"#);\n",
+         proj_db_path
+diff --git a/c/sedona-s2geography/build.rs b/c/sedona-s2geography/build.rs
+index 210534cc..f12c18a8 100644
+--- a/c/sedona-s2geography/build.rs
++++ b/c/sedona-s2geography/build.rs
+@@ -16,18 +16,23 @@
+ // under the License.
+ use std::{
+     collections::HashSet,
++    env,
+     path::{Path, PathBuf},
++    process::Command,
+ };
+ 
+ use regex::Regex;
+ 
+ fn main() {
++    let mut config = cmake::Config::new(".");
++    configure_wasm_vcpkg_toolchain(&mut config);
++
+     // Run cmake. The cmake crate translates the Rust environment into a plausible
+     // cmake one, although it's not perfect. Early observations are that
+     // MACOS_DEPLOYMENT_TARGET isn't passed through properly but this can probably
+     // be solved by setting the environment variable in CI before building a portable
+     // target like a Python package.
+-    let dst = cmake::Config::new(".").build();
++    let dst = config.build();
+ 
+     // Link the libraries that are easy to enumerate by hand and whose location
+     // we control in CMakeLists.txt.
+@@ -52,6 +57,86 @@ fn main() {
+     parse_cmake_linker_flags(&dst);
+ }
+ 
++fn configure_wasm_vcpkg_toolchain(config: &mut cmake::Config) {
++    println!("cargo:rerun-if-env-changed=VCPKG_ROOT");
++    println!("cargo:rerun-if-env-changed=VCPKG_TARGET_TRIPLET");
++    println!("cargo:rerun-if-env-changed=VCPKG_INSTALLED_DIR");
++    println!("cargo:rerun-if-env-changed=EMSCRIPTEN_ROOT");
++    println!("cargo:rerun-if-env-changed=EMSDK");
++
++    if env::var("CARGO_CFG_TARGET_ARCH").as_deref() != Ok("wasm32") {
++        return;
++    }
++
++    config.no_default_flags(true);
++
++    let repo_root = repo_root_from_manifest_dir();
++    let vcpkg_root = env::var("VCPKG_ROOT")
++        .unwrap_or_else(|_| repo_root.join("deps").join("vcpkg").display().to_string());
++    let installed_dir = env::var("VCPKG_INSTALLED_DIR").unwrap_or_else(|_| {
++        repo_root
++            .join("build")
++            .join("vcpkg")
++            .join("s2-installed")
++            .display()
++            .to_string()
++    });
++    let target_triplet =
++        env::var("VCPKG_TARGET_TRIPLET").unwrap_or_else(|_| "wasm32-emscripten".to_string());
++    let emscripten_root =
++        env::var("EMSCRIPTEN_ROOT").unwrap_or_else(|_| resolve_emscripten_root());
++
++    config
++        .define(
++            "CMAKE_TOOLCHAIN_FILE",
++            format!("{vcpkg_root}/scripts/buildsystems/vcpkg.cmake"),
++        )
++        .define("VCPKG_TARGET_TRIPLET", &target_triplet)
++        .define("VCPKG_INSTALLED_DIR", &installed_dir)
++        .define("Threads_FOUND", "TRUE")
++        .define("CMAKE_THREAD_LIBS_INIT", "")
++        .define("CMAKE_USE_PTHREADS_INIT", "FALSE")
++        .define(
++            "VCPKG_CHAINLOAD_TOOLCHAIN_FILE",
++            format!("{emscripten_root}/cmake/Modules/Platform/Emscripten.cmake"),
++        );
++}
++
++fn repo_root_from_manifest_dir() -> PathBuf {
++    let mut path =
++        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
++    for _ in 0..5 {
++        path.pop();
++    }
++    path
++}
++
++fn resolve_emscripten_root() -> String {
++    if let Ok(value) = env::var("EMSDK") {
++        let candidate = PathBuf::from(value).join("upstream").join("emscripten");
++        if candidate.join("cmake/Modules/Platform/Emscripten.cmake").exists() {
++            return candidate.display().to_string();
++        }
++    }
++
++    let output = Command::new("em-config")
++        .arg("EMSCRIPTEN_ROOT")
++        .output()
++        .expect("Failed to run `em-config EMSCRIPTEN_ROOT`");
++
++    if !output.status.success() {
++        panic!(
++            "`em-config EMSCRIPTEN_ROOT` failed with status {}",
++            output.status
++        );
++    }
++
++    String::from_utf8(output.stdout)
++        .expect("`em-config EMSCRIPTEN_ROOT` returned non-UTF8 output")
++        .trim()
++        .to_string()
++}
++
+ fn parse_cmake_linker_flags(binary_dir: &Path) {
+     // e.g., libabsl_base.a
+     let re_lib = Regex::new("^(lib|)([^.]+).*?(LIB|lib|a|dylib|so|dll)$").unwrap();
+@@ -69,6 +154,8 @@ fn parse_cmake_linker_flags(binary_dir: &Path) {
+ 
+     let mut last_lib_dir = "".to_string();
+ 
++    let is_wasm32 = std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32");
++
+     // Split flags on whitespace. This probably won't work if library paths
+     // contain spaces.
+     for item in linker_flags_string.split_whitespace() {
+@@ -82,6 +169,9 @@ fn parse_cmake_linker_flags(binary_dir: &Path) {
+             continue;
+         } else if let Some(lib_match) = re_linker_lib.captures(item) {
+             let (_, [lib]) = lib_match.extract();
++            if is_wasm32 && lib == "dl" {
++                continue;
++            }
+             println!("cargo:rustc-link-lib={lib}");
+             continue;
+         }
+@@ -108,6 +198,10 @@ fn parse_cmake_linker_flags(binary_dir: &Path) {
+                         println!("cargo:rustc-link-search=native={dir}");
+                         last_lib_dir = dir.to_string();
+                     }
+ 
++                    if is_wasm32 && lib == "dl" {
++                        continue;
++                    }
++
+                     match suffix {
+                         "lib" | "LIB" => println!("cargo:rustc-link-lib={lib}"),
+                         "a" => println!("cargo:rustc-link-lib=static={lib}"),
+diff --git a/c/sedona-s2geography/Cargo.toml b/c/sedona-s2geography/Cargo.toml
+index 7b2334c2..84042b5b 100644
+--- a/c/sedona-s2geography/Cargo.toml
++++ b/c/sedona-s2geography/Cargo.toml
+@@ -43,7 +43,6 @@ sedona-testing = { workspace = true, features = ["criterion"] }
+ arrow-array = { workspace = true, features = ["ffi"] }
+ datafusion-common = { workspace = true }
+ datafusion-expr = { workspace = true }
+-errno = { version = "0.3" }
+ sedona-common = { workspace = true }
+ sedona-expr = { workspace = true }
+ sedona-extension = { workspace = true }
+diff --git a/c/sedona-s2geography/CMakeLists.txt b/c/sedona-s2geography/CMakeLists.txt
+index 7bb151e9..cce9a221 100644
+--- a/c/sedona-s2geography/CMakeLists.txt
++++ b/c/sedona-s2geography/CMakeLists.txt
+@@ -22,6 +22,17 @@ include(FetchContent)
+ # Required for S2
+ set(CMAKE_CXX_STANDARD 17)
+ 
++# Emscripten/OpenSSL in this browser build path is configured without pthreads.
++# Predeclare a no-op Threads target so the static OpenSSL wrapper can resolve it.
++if(EMSCRIPTEN)
++  set(Threads_FOUND TRUE)
++  set(CMAKE_THREAD_LIBS_INIT "")
++  set(CMAKE_USE_PTHREADS_INIT FALSE)
++  if(NOT TARGET Threads::Threads)
++    add_library(Threads::Threads INTERFACE IMPORTED)
++  endif()
++endif()
++
+ # These are our two external dependencies that we don't build on the fly.
+ # These can be installed with homebrew or vcpkg (see README).
+ find_package(OpenSSL REQUIRED)

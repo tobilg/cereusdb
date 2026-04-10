@@ -1,0 +1,32 @@
+diff --git a/rust/sedona-testing/Cargo.toml b/rust/sedona-testing/Cargo.toml
+index f5ed344e..8e3155e7 100644
+--- a/rust/sedona-testing/Cargo.toml
++++ b/rust/sedona-testing/Cargo.toml
+@@ -37,6 +37,7 @@ rstest = { workspace = true }
+ default = []
+ geo = ["dep:geo"]
+ criterion = ["dep:criterion"]
++parquet-support = ["dep:parquet"]
+ 
+ [dependencies]
+ arrow-array = { workspace = true }
+@@ -49,7 +50,7 @@ datafusion-physical-expr = { workspace = true }
+ fastrand = { workspace = true }
+ geo-traits = { workspace = true, features = ["geo-types"] }
+ geo-types = { workspace = true }
+-parquet = { workspace = true, features = ["arrow", "snap", "zstd"] }
++parquet = { workspace = true, features = ["arrow", "snap", "zstd"], optional = true }
+ rand = { workspace = true }
+ sedona-common = { workspace = true }
+ sedona-geometry = { workspace = true }
+diff --git a/rust/sedona-testing/src/lib.rs b/rust/sedona-testing/src/lib.rs
+index 2bc7b39f..da3f8dcb 100644
+--- a/rust/sedona-testing/src/lib.rs
++++ b/rust/sedona-testing/src/lib.rs
+@@ -21,5 +21,6 @@ pub mod data;
+ pub mod datagen;
+ pub mod fixtures;
+ pub mod rasters;
++#[cfg(feature = "parquet-support")]
+ pub mod read;
+ pub mod testers;

@@ -1,0 +1,21 @@
+{
+  "name": "@cereusdb/playground",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check-deps": "test -f ../standard/dist/index.js || (echo 'Error: @cereusdb/standard has not been built yet.' && echo 'Run the following from the repo root first:' && echo '' && echo '  make package-standard' && exit 1)",
+    "predev": "npm run check-deps",
+    "dev": "vite",
+    "prebuild": "npm run check-deps",
+    "build": "tsc --noEmit && vite build",
+    "build:release": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler pages deploy dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "wrangler": "^4.81.1"
+  }
+}

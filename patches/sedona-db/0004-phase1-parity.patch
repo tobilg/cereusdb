@@ -1,0 +1,536 @@
+diff --git a/c/sedona-geos/src/lib.rs b/c/sedona-geos/src/lib.rs
+index d05367d0..166b654a 100644
+--- a/c/sedona-geos/src/lib.rs
++++ b/c/sedona-geos/src/lib.rs
+@@ -26,6 +26,7 @@ mod st_area;
+ mod st_boundary;
+ mod st_buffer;
+ mod st_centroid;
++mod st_closest_point;
+ mod st_concavehull;
+ mod st_convexhull;
+ mod st_dwithin;
+@@ -35,7 +36,9 @@ mod st_isvalid;
+ mod st_isvalidreason;
+ mod st_length;
+ mod st_line_merge;
++mod st_line_locate_point;
+ mod st_makevalid;
++mod st_max_distance;
+ mod st_minimumclearance;
+ mod st_minimumclearance_line;
+ mod st_nrings;
+diff --git a/c/sedona-geos/src/register.rs b/c/sedona-geos/src/register.rs
+index 83d90e15..49f15028 100644
+--- a/c/sedona-geos/src/register.rs
++++ b/c/sedona-geos/src/register.rs
+@@ -44,6 +44,7 @@ pub fn scalar_kernels() -> Vec<(&'static str, Vec<ScalarKernelRef>)> {
+         "st_buffer" => crate::st_buffer::st_buffer_impl,
+         "st_buffer" => crate::st_buffer::st_buffer_style_impl,
+         "st_centroid" => crate::st_centroid::st_centroid_impl,
++        "st_closestpoint" => crate::st_closest_point::st_closest_point_impl,
+         "st_concavehull" => crate::st_concavehull::st_concave_hull_allow_holes_impl,
+         "st_concavehull" => crate::st_concavehull::st_concave_hull_impl,
+         "st_contains" => crate::binary_predicates::st_contains_impl,
+@@ -64,7 +65,9 @@ pub fn scalar_kernels() -> Vec<(&'static str, Vec<ScalarKernelRef>)> {
+         "st_isvalidreason" => crate::st_isvalidreason::st_is_valid_reason_impl,
+         "st_length" => crate::st_length::st_length_impl,
+         "st_linemerge" => crate::st_line_merge::st_line_merge_impl,
++        "st_linelocatepoint" => crate::st_line_locate_point::st_line_locate_point_impl,
+         "st_makevalid" => crate::st_makevalid::st_make_valid_impl,
++        "st_maxdistance" => crate::st_max_distance::st_max_distance_impl,
+         "st_minimumclearance" => crate::st_minimumclearance::st_minimum_clearance_impl,
+         "st_minimumclearanceline" => crate::st_minimumclearance_line::st_minimum_clearance_line_impl,
+         "st_nrings" => crate::st_nrings::st_nrings_impl,
+diff --git a/c/sedona-geos/src/st_closest_point.rs b/c/sedona-geos/src/st_closest_point.rs
+new file mode 100644
+index 00000000..a6c33562
+--- /dev/null
++++ b/c/sedona-geos/src/st_closest_point.rs
+@@ -0,0 +1,178 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++use std::sync::Arc;
++
++use arrow_array::builder::BinaryBuilder;
++use datafusion_common::{error::Result, DataFusionError};
++use datafusion_expr::ColumnarValue;
++use geos::{CoordSeq, CoordType, Geom, Geometry};
++use sedona_expr::{
++    item_crs::ItemCrsKernel,
++    scalar_udf::{ScalarKernelRef, SedonaScalarKernel},
++};
++use sedona_geometry::wkb_factory::WKB_MIN_PROBABLE_BYTES;
++use sedona_schema::{
++    datatypes::{SedonaType, WKB_GEOGRAPHY, WKB_GEOMETRY},
++    matchers::ArgMatcher,
++};
++
++use crate::executor::GeosExecutor;
++use crate::geos_to_wkb::write_geos_geometry;
++
++pub fn st_closest_point_impl() -> Vec<ScalarKernelRef> {
++    ItemCrsKernel::wrap_impl(vec![
++        Arc::new(STClosestPoint {
++            is_geography: false,
++        }),
++        Arc::new(STClosestPoint { is_geography: true }),
++    ])
++}
++
++#[derive(Debug)]
++struct STClosestPoint {
++    is_geography: bool,
++}
++
++impl SedonaScalarKernel for STClosestPoint {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        let matcher = if self.is_geography {
++            ArgMatcher::new(
++                vec![ArgMatcher::is_geography(), ArgMatcher::is_geography()],
++                WKB_GEOGRAPHY,
++            )
++        } else {
++            ArgMatcher::new(
++                vec![ArgMatcher::is_geometry(), ArgMatcher::is_geometry()],
++                WKB_GEOMETRY,
++            )
++        };
++
++        matcher.match_args(args)
++    }
++
++    fn invoke_batch(
++        &self,
++        arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        let executor = GeosExecutor::new(arg_types, args);
++        let mut builder = BinaryBuilder::with_capacity(
++            executor.num_iterations(),
++            WKB_MIN_PROBABLE_BYTES * executor.num_iterations(),
++        );
++
++        executor.execute_wkb_wkb_void(|lhs, rhs| {
++            match (lhs, rhs) {
++                (Some(lhs), Some(rhs)) => {
++                    invoke_scalar(lhs, rhs, &mut builder)?;
++                    builder.append_value([]);
++                }
++                _ => builder.append_null(),
++            }
++
++            Ok(())
++        })?;
++
++        executor.finish(Arc::new(builder.finish()))
++    }
++}
++
++fn invoke_scalar(
++    geos_geom: &Geometry,
++    other_geos_geom: &Geometry,
++    writer: &mut impl std::io::Write,
++) -> Result<()> {
++    let geometry = if geos_geom.is_empty().map_err(to_execution_err("check if empty"))?
++        || other_geos_geom.is_empty().map_err(to_execution_err("check if empty"))?
++    {
++        Geometry::create_empty_point().map_err(to_execution_err("create empty point"))?
++    } else {
++        let coord_seq = geos_geom
++            .nearest_points(other_geos_geom)
++            .map_err(to_execution_err("calculate nearest points"))?;
++
++        let x = coord_seq.get_x(0).map_err(to_execution_err("get nearest x"))?;
++        let y = coord_seq.get_y(0).map_err(to_execution_err("get nearest y"))?;
++
++        let mut point_coord_seq =
++            CoordSeq::new(1, CoordType::XY).map_err(to_execution_err("create coordinate sequence"))?;
++        point_coord_seq
++            .set_x(0, x)
++            .map_err(to_execution_err("set nearest x"))?;
++        point_coord_seq
++            .set_y(0, y)
++            .map_err(to_execution_err("set nearest y"))?;
++
++        Geometry::create_point(point_coord_seq).map_err(to_execution_err("create point"))?
++    };
++
++    write_geos_geometry(&geometry, writer)?;
++    Ok(())
++}
++
++fn to_execution_err(context: &'static str) -> impl FnOnce(geos::Error) -> DataFusionError {
++    move |error| DataFusionError::Execution(format!("Failed to {context}: {error}"))
++}
++
++#[cfg(test)]
++mod tests {
++    use rstest::rstest;
++    use sedona_expr::scalar_udf::SedonaScalarUDF;
++    use sedona_schema::datatypes::{
++        SedonaType, WKB_GEOGRAPHY, WKB_GEOMETRY, WKB_GEOMETRY_ITEM_CRS, WKB_VIEW_GEOGRAPHY,
++        WKB_VIEW_GEOMETRY,
++    };
++    use sedona_testing::testers::ScalarUdfTester;
++
++    use super::*;
++
++    #[rstest]
++    fn udf_geometry(#[values(WKB_GEOMETRY, WKB_VIEW_GEOMETRY)] sedona_type: SedonaType) {
++        let udf = SedonaScalarUDF::from_impl("st_closestpoint", st_closest_point_impl());
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type.clone(), sedona_type]);
++        tester.assert_return_type(WKB_GEOMETRY);
++
++        let result = tester
++            .invoke_scalar_scalar("LINESTRING (0 0, 4 0)", "POINT (2 3)")
++            .unwrap();
++        tester.assert_scalar_result_equals(result, "POINT (2 0)");
++    }
++
++    #[rstest]
++    fn udf_geography(#[values(WKB_GEOGRAPHY, WKB_VIEW_GEOGRAPHY)] sedona_type: SedonaType) {
++        let udf = SedonaScalarUDF::from_impl("st_closestpoint", st_closest_point_impl());
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type.clone(), sedona_type]);
++        tester.assert_return_type(WKB_GEOGRAPHY);
++
++        let result = tester
++            .invoke_scalar_scalar("LINESTRING (0 0, 4 0)", "POINT (2 3)")
++            .unwrap();
++        tester.assert_scalar_result_equals(result, "POINT (2 0)");
++    }
++
++    #[rstest]
++    fn udf_invoke_item_crs(#[values(WKB_GEOMETRY_ITEM_CRS.clone())] sedona_type: SedonaType) {
++        let udf = SedonaScalarUDF::from_impl("st_closestpoint", st_closest_point_impl());
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type.clone(), sedona_type]);
++        tester.assert_return_type(WKB_GEOMETRY_ITEM_CRS.clone());
++
++        let result = tester
++            .invoke_scalar_scalar("LINESTRING (0 0, 4 0)", "POINT (2 3)")
++            .unwrap();
++        tester.assert_scalar_result_equals(result, "POINT (2 0)");
++    }
++}
+diff --git a/c/sedona-geos/src/st_line_locate_point.rs b/c/sedona-geos/src/st_line_locate_point.rs
+new file mode 100644
+index 00000000..afdac8f7
+--- /dev/null
++++ b/c/sedona-geos/src/st_line_locate_point.rs
+@@ -0,0 +1,114 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++use std::sync::Arc;
++
++use arrow_array::builder::Float64Builder;
++use arrow_schema::DataType;
++use datafusion_common::{error::Result, DataFusionError};
++use datafusion_expr::ColumnarValue;
++use geos::Geom;
++use sedona_expr::{
++    item_crs::ItemCrsKernel,
++    scalar_udf::{ScalarKernelRef, SedonaScalarKernel},
++};
++use sedona_schema::{datatypes::SedonaType, matchers::ArgMatcher};
++
++use crate::executor::GeosExecutor;
++
++pub fn st_line_locate_point_impl() -> Vec<ScalarKernelRef> {
++    ItemCrsKernel::wrap_impl(STLineLocatePoint {})
++}
++
++#[derive(Debug)]
++struct STLineLocatePoint {}
++
++impl SedonaScalarKernel for STLineLocatePoint {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        let matcher = ArgMatcher::new(
++            vec![ArgMatcher::is_geometry(), ArgMatcher::is_geometry()],
++            SedonaType::Arrow(DataType::Float64),
++        );
++
++        matcher.match_args(args)
++    }
++
++    fn invoke_batch(
++        &self,
++        arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        let executor = GeosExecutor::new(arg_types, args);
++        let mut builder = Float64Builder::with_capacity(executor.num_iterations());
++
++        executor.execute_wkb_wkb_void(|lhs, rhs| {
++            match (lhs, rhs) {
++                (Some(lhs), Some(rhs)) => builder.append_value(invoke_scalar(lhs, rhs)?),
++                _ => builder.append_null(),
++            }
++
++            Ok(())
++        })?;
++
++        executor.finish(Arc::new(builder.finish()))
++    }
++}
++
++fn invoke_scalar(geos_geom: &geos::Geometry, other_geos_geom: &geos::Geometry) -> Result<f64> {
++    geos_geom
++        .project_normalized(other_geos_geom)
++        .map_err(|error| {
++            DataFusionError::Execution(format!(
++                "Failed to calculate normalized line projection: {error}"
++            ))
++        })
++}
++
++#[cfg(test)]
++mod tests {
++    use rstest::rstest;
++    use sedona_expr::scalar_udf::SedonaScalarUDF;
++    use sedona_schema::datatypes::{SedonaType, WKB_GEOMETRY, WKB_GEOMETRY_ITEM_CRS, WKB_VIEW_GEOMETRY};
++    use sedona_testing::testers::ScalarUdfTester;
++
++    use super::*;
++
++    #[rstest]
++    fn udf(#[values(WKB_GEOMETRY, WKB_VIEW_GEOMETRY)] sedona_type: SedonaType) {
++        let udf =
++            SedonaScalarUDF::from_impl("st_linelocatepoint", st_line_locate_point_impl());
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type.clone(), sedona_type]);
++        tester.assert_return_type(DataType::Float64);
++
++        let result = tester
++            .invoke_scalar_scalar("LINESTRING (0 0, 4 0)", "POINT (2 3)")
++            .unwrap();
++        tester.assert_scalar_result_equals(result, 0.5);
++    }
++
++    #[rstest]
++    fn udf_invoke_item_crs(#[values(WKB_GEOMETRY_ITEM_CRS.clone())] sedona_type: SedonaType) {
++        let udf =
++            SedonaScalarUDF::from_impl("st_linelocatepoint", st_line_locate_point_impl());
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type.clone(), sedona_type]);
++        tester.assert_return_type(DataType::Float64);
++
++        let result = tester
++            .invoke_scalar_scalar("LINESTRING (0 0, 4 0)", "POINT (2 3)")
++            .unwrap();
++        tester.assert_scalar_result_equals(result, 0.5);
++    }
++}
+diff --git a/c/sedona-geos/src/st_max_distance.rs b/c/sedona-geos/src/st_max_distance.rs
+new file mode 100644
+index 00000000..d78881d9
+--- /dev/null
++++ b/c/sedona-geos/src/st_max_distance.rs
+@@ -0,0 +1,182 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++use std::sync::Arc;
++
++use arrow_array::builder::Float64Builder;
++use arrow_schema::DataType;
++use datafusion_common::{error::Result, DataFusionError};
++use datafusion_expr::ColumnarValue;
++use geos::{Geom, GeometryTypes};
++use sedona_expr::{
++    item_crs::ItemCrsKernel,
++    scalar_udf::{ScalarKernelRef, SedonaScalarKernel},
++};
++use sedona_schema::{datatypes::SedonaType, matchers::ArgMatcher};
++
++use crate::executor::GeosExecutor;
++
++pub fn st_max_distance_impl() -> Vec<ScalarKernelRef> {
++    ItemCrsKernel::wrap_impl(STMaxDistance {})
++}
++
++#[derive(Debug)]
++struct STMaxDistance {}
++
++impl SedonaScalarKernel for STMaxDistance {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        let matcher = ArgMatcher::new(
++            vec![ArgMatcher::is_geometry(), ArgMatcher::is_geometry()],
++            SedonaType::Arrow(DataType::Float64),
++        );
++
++        matcher.match_args(args)
++    }
++
++    fn invoke_batch(
++        &self,
++        arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        let executor = GeosExecutor::new(arg_types, args);
++        let mut builder = Float64Builder::with_capacity(executor.num_iterations());
++
++        executor.execute_wkb_wkb_void(|lhs, rhs| {
++            match (lhs, rhs) {
++                (Some(lhs), Some(rhs)) => builder.append_value(invoke_scalar(lhs, rhs)?),
++                _ => builder.append_null(),
++            }
++
++            Ok(())
++        })?;
++
++        executor.finish(Arc::new(builder.finish()))
++    }
++}
++
++fn invoke_scalar(geos_geom: &geos::Geometry, other_geos_geom: &geos::Geometry) -> Result<f64> {
++    if geos_geom.is_empty().map_err(to_execution_err("check if empty"))?
++        || other_geos_geom.is_empty().map_err(to_execution_err("check if empty"))?
++    {
++        return Ok(0.0);
++    }
++
++    let lhs_hull = geos_geom
++        .convex_hull()
++        .map_err(to_execution_err("calculate convex hull"))?;
++    let rhs_hull = other_geos_geom
++        .convex_hull()
++        .map_err(to_execution_err("calculate convex hull"))?;
++
++    let mut lhs_points = Vec::new();
++    collect_xy_points(&lhs_hull.extract_unique_points().map_err(to_execution_err("extract unique points"))?, &mut lhs_points)?;
++
++    let mut rhs_points = Vec::new();
++    collect_xy_points(&rhs_hull.extract_unique_points().map_err(to_execution_err("extract unique points"))?, &mut rhs_points)?;
++
++    if lhs_points.is_empty() || rhs_points.is_empty() {
++        return Ok(0.0);
++    }
++
++    // The maximum distance between two piecewise-linear geometries is attained at
++    // extreme points of their convex hulls, so the unique hull vertices are enough.
++    let mut max_distance = 0.0_f64;
++    for (lhs_x, lhs_y) in &lhs_points {
++        for (rhs_x, rhs_y) in &rhs_points {
++            max_distance = max_distance.max((lhs_x - rhs_x).hypot(lhs_y - rhs_y));
++        }
++    }
++
++    Ok(max_distance)
++}
++
++fn collect_xy_points(geom: &impl Geom, out: &mut Vec<(f64, f64)>) -> Result<()> {
++    match geom
++        .geometry_type()
++        .map_err(to_execution_err("inspect geometry type"))?
++    {
++        GeometryTypes::Point => {
++            if !geom.is_empty().map_err(to_execution_err("check if empty"))? {
++                out.push((
++                    geom.get_x().map_err(to_execution_err("read x"))?,
++                    geom.get_y().map_err(to_execution_err("read y"))?,
++                ));
++            }
++        }
++        GeometryTypes::MultiPoint | GeometryTypes::GeometryCollection => {
++            for index in 0..geom
++                .get_num_geometries()
++                .map_err(to_execution_err("count geometries"))?
++            {
++                let child = geom
++                    .get_geometry_n(index)
++                    .map_err(to_execution_err("read child geometry"))?;
++                collect_xy_points(&child, out)?;
++            }
++        }
++        other => {
++            return Err(DataFusionError::Execution(format!(
++                "Unexpected geometry type while collecting hull vertices: {other:?}"
++            )))
++        }
++    }
++
++    Ok(())
++}
++
++fn to_execution_err(context: &'static str) -> impl FnOnce(geos::Error) -> DataFusionError {
++    move |error| DataFusionError::Execution(format!("Failed to {context}: {error}"))
++}
++
++#[cfg(test)]
++mod tests {
++    use rstest::rstest;
++    use sedona_expr::scalar_udf::SedonaScalarUDF;
++    use sedona_schema::datatypes::{SedonaType, WKB_GEOMETRY, WKB_GEOMETRY_ITEM_CRS, WKB_VIEW_GEOMETRY};
++    use sedona_testing::testers::ScalarUdfTester;
++
++    use super::*;
++
++    #[rstest]
++    fn udf(#[values(WKB_GEOMETRY, WKB_VIEW_GEOMETRY)] sedona_type: SedonaType) {
++        let udf = SedonaScalarUDF::from_impl("st_maxdistance", st_max_distance_impl());
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type.clone(), sedona_type]);
++        tester.assert_return_type(DataType::Float64);
++
++        let result = tester
++            .invoke_scalar_scalar(
++                "POLYGON ((10 10, 11 10, 10 11, 10 10))",
++                "POLYGON ((0 0, 1 0, 0 1, 0 0))",
++            )
++            .unwrap();
++        tester.assert_scalar_result_equals(result, 14.866068747318506_f64);
++    }
++
++    #[rstest]
++    fn udf_invoke_item_crs(#[values(WKB_GEOMETRY_ITEM_CRS.clone())] sedona_type: SedonaType) {
++        let udf = SedonaScalarUDF::from_impl("st_maxdistance", st_max_distance_impl());
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type.clone(), sedona_type]);
++        tester.assert_return_type(DataType::Float64);
++
++        let result = tester
++            .invoke_scalar_scalar(
++                "POLYGON ((10 10, 11 10, 10 11, 10 10))",
++                "POLYGON ((0 0, 1 0, 0 1, 0 0))",
++            )
++            .unwrap();
++        tester.assert_scalar_result_equals(result, 14.866068747318506_f64);
++    }
++}

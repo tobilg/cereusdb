@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature/*]
+  pull_request:
+    branches: [main]
+
+env:
+  EMSDK_VERSION: '4.0.22'
+  NODE_VERSION: '22'
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v16
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      - name: Verify toolchain
+        run: emcc -v
+
+      - name: Install binaryen
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Checkout vcpkg for S2-enabled builds
+        run: git clone --depth 1 https://github.com/microsoft/vcpkg.git deps/vcpkg
+
+      - name: Build browser packages
+        run: |
+          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-minimal
+          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-standard
+          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-global
+          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-full
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: |
+            dist/minimal
+            dist/standard
+            dist/global
+            dist/full
+          if-no-files-found: error
+          retention-days: 7
+
+  packages:
+    runs-on: ubuntu-latest
+    needs: build-wasm
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [minimal, standard, global, full]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: dist
+
+      - name: Install JS dependencies
+        run: cd js && npm ci
+
+      - name: Build shared TypeScript wrapper
+        run: cd js && npm exec tsc
+
+      - name: Run Vitest for ${{ matrix.package }}
+        run: cd js && npm run test:${{ matrix.package }}
+
+      - name: Build npm package shell
+        run: node scripts/build-npm-package.mjs ${{ matrix.package }}
+
+      - name: Validate npm package tarball
+        run: cd packages/${{ matrix.package }} && npm pack --dry-run
+
+  playground:
+    runs-on: ubuntu-latest
+    needs: build-wasm
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            js/package-lock.json
+            packages/playground/package-lock.json
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: dist
+
+      - name: Install JS dependencies
+        run: cd js && npm ci
+
+      - name: Build shared TypeScript wrapper
+        run: cd js && npm exec tsc
+
+      - name: Build standard package shell
+        run: node scripts/build-npm-package.mjs standard
+
+      - name: Install playground dependencies
+        run: cd packages/playground && npm ci
+
+      - name: Build playground
+        run: cd packages/playground && npm run build:release

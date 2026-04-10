@@ -1,0 +1,21 @@
+# Rust
+target/
+Cargo.lock
+
+# WASM build output
+pkg
+pkg/
+build/
+
+# Node.js
+node_modules/
+dist/
+packages/documentation/dist/
+packages/playground/dist/
+
+# OS
+**/.DS_Store
+
+# IDE
+.idea/
+.vscode/

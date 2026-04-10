@@ -1,0 +1,27 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "CereusDB API Documentation",
+  "entryPoints": [
+    "../../js/dist/index.d.ts"
+  ],
+  "entryPointStrategy": "expand",
+  "router": "structure-dir",
+  "out": "dist",
+  "readme": "./README.md",
+  "projectDocuments": [
+    "./guides/getting-started.md",
+    "./guides/package-selection.md"
+  ],
+  "includeVersion": false,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "navigationLinks": {
+    "GitHub": "https://github.com/tobilg/cereusdb",
+    "npm (minimal)": "https://www.npmjs.com/package/@cereusdb/minimal",
+    "npm (standard)": "https://www.npmjs.com/package/@cereusdb/standard",
+    "npm (global)": "https://www.npmjs.com/package/@cereusdb/global",
+    "npm (full)": "https://www.npmjs.com/package/@cereusdb/full"
+  },
+  "categorizeByGroup": true
+}

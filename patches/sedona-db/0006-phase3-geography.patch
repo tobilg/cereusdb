@@ -1,0 +1,436 @@
+diff --git a/rust/sedona-functions/src/lib.rs b/rust/sedona-functions/src/lib.rs
+index 52e428a3..afabe9ac 100644
+--- a/rust/sedona-functions/src/lib.rs
++++ b/rust/sedona-functions/src/lib.rs
+@@ -34,6 +34,7 @@ pub mod st_envelope;
+ mod st_envelope_agg;
+ mod st_flipcoordinates;
+ mod st_force_dim;
++mod st_geography_cast;
+ mod st_geometryn;
+ mod st_geometrytype;
+ mod st_geomfromewkb;
+diff --git a/rust/sedona-functions/src/register.rs b/rust/sedona-functions/src/register.rs
+index 4ff9bcac..002e2fb6 100644
+--- a/rust/sedona-functions/src/register.rs
++++ b/rust/sedona-functions/src/register.rs
+@@ -50,12 +50,16 @@ pub fn default_function_set() -> FunctionSet {
+         crate::st_dump::st_dump_udf,
+         crate::st_envelope::st_envelope_udf,
+         crate::st_flipcoordinates::st_flipcoordinates_udf,
++        crate::st_geography_cast::st_geogtogeometry_udf,
++        crate::st_geography_cast::st_geomtogeography_udf,
+         crate::st_geometryn::st_geometryn_udf,
+         crate::st_geometrytype::st_geometry_type_udf,
++        crate::st_geomfromewkb::st_geogfromewkb_udf,
+         crate::st_geomfromewkb::st_geomfromewkb_udf,
+         crate::st_geomfromwkb::st_geogfromwkb_udf,
+         crate::st_geomfromwkb::st_geomfromwkb_udf,
+         crate::st_geomfromwkb::st_geomfromwkbunchecked_udf,
++        crate::st_geomfromwkt::st_geogfromewkt_udf,
+         crate::st_geomfromwkt::st_geogfromwkt_udf,
+         crate::st_geomfromwkt::st_geomfromewkt_udf,
+         crate::st_geomfromwkt::st_geomfromwkt_udf,
+diff --git a/rust/sedona-functions/src/st_geomfromewkb.rs b/rust/sedona-functions/src/st_geomfromewkb.rs
+index 0c223b4c..4b5c12df 100644
+--- a/rust/sedona-functions/src/st_geomfromewkb.rs
++++ b/rust/sedona-functions/src/st_geomfromewkb.rs
+@@ -27,7 +27,9 @@ use sedona_expr::{
+ };
+ use sedona_geometry::{wkb_factory::WKB_MIN_PROBABLE_BYTES, wkb_header::WkbHeader};
+ use sedona_schema::{
+-    datatypes::{SedonaType, WKB_GEOMETRY, WKB_GEOMETRY_ITEM_CRS, WKB_VIEW_GEOGRAPHY},
++    datatypes::{
++        Edges, SedonaType, WKB_GEOGRAPHY, WKB_GEOMETRY, WKB_VIEW_GEOGRAPHY, WKB_VIEW_GEOMETRY,
++    },
+     matchers::ArgMatcher,
+ };
+ 
+@@ -40,17 +42,35 @@ use crate::executor::WkbExecutor;
+ pub fn st_geomfromewkb_udf() -> SedonaScalarUDF {
+     SedonaScalarUDF::new(
+         "st_geomfromewkb",
+-        vec![Arc::new(STGeomFromEWKB {})],
++        vec![Arc::new(STGeoFromEWKB {
++            out_type: WKB_GEOMETRY,
++        })],
++        Volatility::Immutable,
++    )
++}
++
++/// ST_GeogFromEWKB() scalar UDF implementation
++pub fn st_geogfromewkb_udf() -> SedonaScalarUDF {
++    SedonaScalarUDF::new(
++        "st_geogfromewkb",
++        vec![Arc::new(STGeoFromEWKB {
++            out_type: WKB_GEOGRAPHY,
++        })],
+         Volatility::Immutable,
+     )
+ }
+ 
+ #[derive(Debug)]
+-struct STGeomFromEWKB {}
++struct STGeoFromEWKB {
++    out_type: SedonaType,
++}
+ 
+-impl SedonaScalarKernel for STGeomFromEWKB {
++impl SedonaScalarKernel for STGeoFromEWKB {
+     fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
+-        let matcher = ArgMatcher::new(vec![ArgMatcher::is_binary()], WKB_GEOMETRY_ITEM_CRS.clone());
++        let matcher = ArgMatcher::new(
++            vec![ArgMatcher::is_binary()],
++            SedonaType::new_item_crs(&self.out_type)?,
++        );
+         matcher.match_args(args)
+     }
+ 
+@@ -61,8 +81,16 @@ impl SedonaScalarKernel for STGeomFromEWKB {
+     ) -> Result<ColumnarValue> {
+         let iter_type = match &arg_types[0] {
+             SedonaType::Arrow(data_type) => match data_type {
+-                DataType::Binary => WKB_GEOMETRY,
+-                DataType::BinaryView => WKB_VIEW_GEOGRAPHY,
++                DataType::Binary => match &self.out_type {
++                    SedonaType::Wkb(Edges::Spherical, _)
++                    | SedonaType::WkbView(Edges::Spherical, _) => WKB_GEOGRAPHY,
++                    _ => WKB_GEOMETRY,
++                },
++                DataType::BinaryView => match &self.out_type {
++                    SedonaType::Wkb(Edges::Spherical, _)
++                    | SedonaType::WkbView(Edges::Spherical, _) => WKB_VIEW_GEOGRAPHY,
++                    _ => WKB_VIEW_GEOMETRY,
++                },
+                 DataType::Null => SedonaType::Arrow(DataType::Null),
+                 _ => {
+                     return sedona_internal_err!(
+@@ -117,7 +145,7 @@ impl SedonaScalarKernel for STGeomFromEWKB {
+             ColumnarValue::Array(Arc::new(new_srid_array))
+         };
+ 
+-        make_item_crs(&WKB_GEOMETRY, item_result, &crs_value, None)
++        make_item_crs(&self.out_type, item_result, &crs_value, None)
+     }
+ }
+ 
+@@ -143,9 +171,13 @@ mod tests {
+ 
+     #[test]
+     fn udf_metadata() {
+-        let geog_from_wkb: ScalarUDF = st_geomfromewkb_udf().into();
+-        assert_eq!(geog_from_wkb.name(), "st_geomfromewkb");
+-        assert!(geog_from_wkb.documentation().is_none());
++        let geom_from_ewkb: ScalarUDF = st_geomfromewkb_udf().into();
++        assert_eq!(geom_from_ewkb.name(), "st_geomfromewkb");
++        assert!(geom_from_ewkb.documentation().is_none());
++
++        let geog_from_ewkb: ScalarUDF = st_geogfromewkb_udf().into();
++        assert_eq!(geog_from_ewkb.name(), "st_geogfromewkb");
++        assert!(geog_from_ewkb.documentation().is_none());
+     }
+ 
+     #[rstest]
+@@ -156,7 +188,10 @@ mod tests {
+             vec![SedonaType::Arrow(data_type.clone())],
+         );
+ 
+-        assert_eq!(tester.return_type().unwrap(), WKB_GEOMETRY_ITEM_CRS.clone());
++        assert_eq!(
++            tester.return_type().unwrap(),
++            SedonaType::new_item_crs(&WKB_GEOMETRY).unwrap()
++        );
+ 
+         assert_scalar_equal(
+             &tester
+@@ -186,4 +221,21 @@ mod tests {
+             ),
+         );
+     }
++
++    #[test]
++    fn geog_udf() {
++        let udf = st_geogfromewkb_udf();
++        let tester = ScalarUdfTester::new(udf.into(), vec![SedonaType::Arrow(DataType::Binary)]);
++        assert_eq!(
++            tester.return_type().unwrap(),
++            SedonaType::new_item_crs(&WKB_GEOGRAPHY).unwrap()
++        );
++
++        assert_scalar_equal(
++            &tester
++                .invoke_scalar(POINT_WITH_SRID_4326_EWKB.to_vec())
++                .unwrap(),
++            &create_scalar_item_crs(Some("POINT (1 2)"), Some("EPSG:4326"), &WKB_GEOGRAPHY),
++        );
++    }
+ }
+diff --git a/rust/sedona-functions/src/st_geomfromwkt.rs b/rust/sedona-functions/src/st_geomfromwkt.rs
+index 79e4c084..0a5a1744 100644
+--- a/rust/sedona-functions/src/st_geomfromwkt.rs
++++ b/rust/sedona-functions/src/st_geomfromwkt.rs
+@@ -74,6 +74,19 @@ pub fn st_geogfromwkt_udf() -> SedonaScalarUDF {
+     udf.with_aliases(vec!["st_geogfromtext".to_string()])
+ }
+ 
++/// ST_GeogFromEWKT() UDF implementation
++///
++/// An implementation of EWKT reading using GeoRust's wkt crate.
++pub fn st_geogfromewkt_udf() -> SedonaScalarUDF {
++    SedonaScalarUDF::new(
++        "st_geogfromewkt",
++        vec![Arc::new(STGeoFromEWKT {
++            out_type: WKB_GEOGRAPHY,
++        })],
++        Volatility::Immutable,
++    )
++}
++
+ #[derive(Debug)]
+ struct STGeoFromWKT {
+     out_type: SedonaType,
+@@ -134,19 +147,23 @@ fn invoke_scalar(wkt_bytes: &str, builder: &mut BinaryBuilder) -> Result<()> {
+ pub fn st_geomfromewkt_udf() -> SedonaScalarUDF {
+     SedonaScalarUDF::new(
+         "st_geomfromewkt",
+-        vec![Arc::new(STGeoFromEWKT {})],
++        vec![Arc::new(STGeoFromEWKT {
++            out_type: WKB_GEOMETRY,
++        })],
+         Volatility::Immutable,
+     )
+ }
+ 
+ #[derive(Debug)]
+-struct STGeoFromEWKT {}
++struct STGeoFromEWKT {
++    out_type: SedonaType,
++}
+ 
+ impl SedonaScalarKernel for STGeoFromEWKT {
+     fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
+         let matcher = ArgMatcher::new(
+             vec![ArgMatcher::is_string()],
+-            SedonaType::new_item_crs(&WKB_GEOMETRY)?,
++            SedonaType::new_item_crs(&self.out_type)?,
+         );
+         matcher.match_args(args)
+     }
+@@ -205,7 +222,7 @@ impl SedonaScalarKernel for STGeoFromEWKT {
+             ColumnarValue::Array(Arc::new(new_srid_array))
+         };
+ 
+-        make_item_crs(&WKB_GEOMETRY, item_result, &crs_value, None)
++        make_item_crs(&self.out_type, item_result, &crs_value, None)
+     }
+ }
+ 
+@@ -261,6 +278,10 @@ mod tests {
+         assert_eq!(geog_from_wkt.name(), "st_geogfromwkt");
+         assert!(geog_from_wkt.documentation().is_none());
+ 
++        let geog_from_ewkt: ScalarUDF = st_geogfromewkt_udf().into();
++        assert_eq!(geog_from_ewkt.name(), "st_geogfromewkt");
++        assert!(geog_from_ewkt.documentation().is_none());
++
+         let geom_from_wkt: ScalarUDF = st_geomfromwkt_udf().into();
+         assert_eq!(geom_from_wkt.name(), "st_geomfromwkt");
+         assert!(geom_from_wkt.documentation().is_none());
+@@ -451,6 +472,17 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn geog_ewkt() {
++        let udf = st_geogfromewkt_udf();
++        let tester = ScalarUdfTester::new(udf.into(), vec![SedonaType::Arrow(DataType::Utf8)]);
++        tester.assert_return_type(SedonaType::new_item_crs(&WKB_GEOGRAPHY).unwrap());
++        assert_scalar_equal(
++            &tester.invoke_scalar("SRID=3857;POINT (1 2)").unwrap(),
++            &create_scalar_item_crs(Some("POINT (1 2)"), Some("EPSG:3857"), &WKB_GEOGRAPHY),
++        );
++    }
++
+     #[test]
+     fn aliases() {
+         let udf: ScalarUDF = st_geomfromwkt_udf().into();
+diff --git a/rust/sedona-functions/src/st_geography_cast.rs b/rust/sedona-functions/src/st_geography_cast.rs
+new file mode 100644
+index 00000000..8250a58e
+--- /dev/null
++++ b/rust/sedona-functions/src/st_geography_cast.rs
+@@ -0,0 +1,174 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++use std::{sync::Arc, vec};
++
++use datafusion_common::error::Result;
++use datafusion_expr::{ColumnarValue, Volatility};
++use sedona_expr::{
++    item_crs::ItemCrsKernel,
++    scalar_udf::{SedonaScalarKernel, SedonaScalarUDF},
++};
++use sedona_schema::{
++    datatypes::{Edges, SedonaType},
++    matchers::ArgMatcher,
++};
++
++/// ST_GeogToGeometry() scalar UDF implementation
++pub fn st_geogtogeometry_udf() -> SedonaScalarUDF {
++    SedonaScalarUDF::new(
++        "st_geogtogeometry",
++        ItemCrsKernel::wrap_impl(vec![Arc::new(STGeoTypeCast {
++            input_is_geography: true,
++        })]),
++        Volatility::Immutable,
++    )
++}
++
++/// ST_GeomToGeography() scalar UDF implementation
++pub fn st_geomtogeography_udf() -> SedonaScalarUDF {
++    SedonaScalarUDF::new(
++        "st_geomtogeography",
++        ItemCrsKernel::wrap_impl(vec![Arc::new(STGeoTypeCast {
++            input_is_geography: false,
++        })]),
++        Volatility::Immutable,
++    )
++}
++
++#[derive(Debug)]
++struct STGeoTypeCast {
++    input_is_geography: bool,
++}
++
++impl SedonaScalarKernel for STGeoTypeCast {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        if args.len() != 1 {
++            return Ok(None);
++        }
++
++        let input_type = &args[0];
++        let is_match = if self.input_is_geography {
++            ArgMatcher::is_geography().match_type(input_type)
++        } else {
++            ArgMatcher::is_geometry().match_type(input_type)
++        };
++
++        if !is_match {
++            return Ok(None);
++        }
++
++        let output_edges = if self.input_is_geography {
++            Edges::Planar
++        } else {
++            Edges::Spherical
++        };
++
++        Ok(Some(match input_type {
++            SedonaType::Wkb(_, crs) => SedonaType::Wkb(output_edges, crs.clone()),
++            SedonaType::WkbView(_, crs) => SedonaType::WkbView(output_edges, crs.clone()),
++            _ => unreachable!(),
++        }))
++    }
++
++    fn invoke_batch(
++        &self,
++        _arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        Ok(args[0].clone())
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use datafusion_expr::ScalarUDF;
++    use sedona_schema::datatypes::{
++        SedonaType, WKB_GEOGRAPHY, WKB_GEOGRAPHY_ITEM_CRS, WKB_GEOMETRY, WKB_GEOMETRY_ITEM_CRS,
++        WKB_VIEW_GEOGRAPHY, WKB_VIEW_GEOMETRY,
++    };
++    use sedona_testing::{
++        compare::assert_scalar_equal,
++        create::{create_scalar, create_scalar_item_crs},
++        testers::ScalarUdfTester,
++    };
++
++    use super::*;
++
++    #[test]
++    fn udf_metadata() {
++        let geog_to_geom: ScalarUDF = st_geogtogeometry_udf().into();
++        assert_eq!(geog_to_geom.name(), "st_geogtogeometry");
++
++        let geom_to_geog: ScalarUDF = st_geomtogeography_udf().into();
++        assert_eq!(geom_to_geog.name(), "st_geomtogeography");
++    }
++
++    #[test]
++    fn geom_to_geog() {
++        let tester = ScalarUdfTester::new(st_geomtogeography_udf().into(), vec![WKB_GEOMETRY]);
++        assert_eq!(tester.return_type().unwrap(), WKB_GEOGRAPHY);
++        assert_scalar_equal(
++            &tester.invoke_scalar("POINT (1 2)").unwrap(),
++            &create_scalar(Some("POINT (1 2)"), &WKB_GEOGRAPHY),
++        );
++
++        let tester =
++            ScalarUdfTester::new(st_geomtogeography_udf().into(), vec![WKB_VIEW_GEOMETRY]);
++        assert_eq!(tester.return_type().unwrap(), WKB_VIEW_GEOGRAPHY);
++    }
++
++    #[test]
++    fn geog_to_geom() {
++        let tester = ScalarUdfTester::new(st_geogtogeometry_udf().into(), vec![WKB_GEOGRAPHY]);
++        assert_eq!(tester.return_type().unwrap(), WKB_GEOMETRY);
++        assert_scalar_equal(
++            &tester.invoke_scalar("POINT (1 2)").unwrap(),
++            &create_scalar(Some("POINT (1 2)"), &WKB_GEOMETRY),
++        );
++    }
++
++    #[test]
++    fn item_crs_is_preserved() {
++        let tester = ScalarUdfTester::new(
++            st_geomtogeography_udf().into(),
++            vec![WKB_GEOMETRY_ITEM_CRS.clone()],
++        );
++        assert_eq!(
++            tester.return_type().unwrap(),
++            SedonaType::new_item_crs(&WKB_GEOGRAPHY).unwrap()
++        );
++        assert_scalar_equal(
++            &tester
++                .invoke_scalar(create_scalar_item_crs(
++                    Some("POINT (1 2)"),
++                    Some("EPSG:3857"),
++                    &WKB_GEOMETRY,
++                ))
++                .unwrap(),
++            &create_scalar_item_crs(Some("POINT (1 2)"), Some("EPSG:3857"), &WKB_GEOGRAPHY),
++        );
++
++        let tester = ScalarUdfTester::new(
++            st_geogtogeometry_udf().into(),
++            vec![WKB_GEOGRAPHY_ITEM_CRS.clone()],
++        );
++        assert_eq!(
++            tester.return_type().unwrap(),
++            SedonaType::new_item_crs(&WKB_GEOMETRY).unwrap()
++        );
++    }
++}

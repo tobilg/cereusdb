@@ -1,0 +1,12 @@
+diff --git a/rust/sedona-functions/src/st_geomfromewkb.rs b/rust/sedona-functions/src/st_geomfromewkb.rs
+index 493cc1b..7942913 100644
+--- a/rust/sedona-functions/src/st_geomfromewkb.rs
++++ b/rust/sedona-functions/src/st_geomfromewkb.rs
+@@ -155,6 +155,7 @@ mod tests {
+     use arrow_array::BinaryArray;
+     use datafusion_common::scalar::ScalarValue;
+     use datafusion_expr::ScalarUDF;
++    use sedona_schema::datatypes::WKB_GEOMETRY_ITEM_CRS;
+     use rstest::rstest;
+     use sedona_testing::{
+         compare::{assert_array_equal, assert_scalar_equal},

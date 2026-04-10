@@ -1,0 +1,316 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_suffix:
+        description: 'Optional prerelease suffix such as -dev.1 or -beta.0'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Build and package without publishing'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  EMSDK_VERSION: '4.0.22'
+  NODE_VERSION: '22'
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      npm_tag: ${{ steps.version.outputs.npm_tag }}
+      dry_run: ${{ steps.version.outputs.dry_run }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Determine version
+        id: version
+        run: |
+          BASE_VERSION="$(python3 - <<'PY'
+import pathlib, re
+text = pathlib.Path('Cargo.toml').read_text()
+match = re.search(r'\[workspace\.package\][\s\S]*?version = "([^"]+)"', text)
+if not match:
+    raise SystemExit('workspace.package.version not found in Cargo.toml')
+print(match.group(1))
+PY
+)"
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+            if [ "$TAG_VERSION" != "$BASE_VERSION" ]; then
+              echo "::error::Tag version ($TAG_VERSION) does not match Cargo workspace version ($BASE_VERSION)"
+              exit 1
+            fi
+            VERSION="$TAG_VERSION"
+          else
+            VERSION="${BASE_VERSION}${{ github.event.inputs.version_suffix }}"
+          fi
+
+          if [[ "$VERSION" == *"-dev"* ]] || [[ "$VERSION" == *"-alpha"* ]] || [[ "$VERSION" == *"-beta"* ]] || [[ "$VERSION" == *"-rc"* ]]; then
+            NPM_TAG="dev"
+          else
+            NPM_TAG="latest"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
+          echo "dry_run=${{ github.event.inputs.dry_run || 'false' }}" >> "$GITHUB_OUTPUT"
+
+  build-wasm:
+    runs-on: ubuntu-latest
+    needs: version
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v16
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      - name: Verify toolchain
+        run: emcc -v
+
+      - name: Install binaryen
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Checkout vcpkg for S2-enabled builds
+        run: git clone --depth 1 https://github.com/microsoft/vcpkg.git deps/vcpkg
+
+      - name: Build browser packages
+        run: |
+          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-minimal
+          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-standard
+          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-global
+          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-full
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: |
+            dist/minimal
+            dist/standard
+            dist/global
+            dist/full
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [version, build-wasm]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [minimal, standard, global, full]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+          registry-url: https://registry.npmjs.org
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: dist
+
+      - name: Install JS dependencies
+        run: cd js && npm ci
+
+      - name: Build shared TypeScript wrapper
+        run: cd js && npm exec tsc
+
+      - name: Sync package versions
+        run: node scripts/sync-package-versions.mjs --version "${{ needs.version.outputs.version }}"
+
+      - name: Build npm package shell
+        run: node scripts/build-npm-package.mjs ${{ matrix.package }}
+
+      - name: Validate package tarball
+        run: cd packages/${{ matrix.package }} && npm pack --dry-run
+
+      - name: Publish @cereusdb/${{ matrix.package }}
+        if: ${{ needs.version.outputs.dry_run != 'true' }}
+        run: cd packages/${{ matrix.package }} && npm publish --access public --tag "${{ needs.version.outputs.npm_tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  deploy-docs:
+    runs-on: ubuntu-latest
+    needs: [version, build-wasm]
+    if: ${{ github.event_name == 'push' && needs.version.outputs.dry_run != 'true' }}
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            js/package-lock.json
+            packages/documentation/package-lock.json
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: dist
+
+      - name: Install JS dependencies
+        run: cd js && npm ci
+
+      - name: Build shared TypeScript declarations
+        run: cd js && npm exec tsc
+
+      - name: Install documentation dependencies
+        run: cd packages/documentation && npm ci
+
+      - name: Build documentation site
+        run: cd packages/documentation && npm run build:release
+
+      - name: Validate Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/documentation
+          command: pages deploy dist --project-name cereusdb-api --branch main
+
+  deploy-playground:
+    runs-on: ubuntu-latest
+    needs: [version, build-wasm]
+    if: ${{ github.event_name == 'push' && needs.version.outputs.dry_run != 'true' }}
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            js/package-lock.json
+            packages/playground/package-lock.json
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: dist
+
+      - name: Install JS dependencies
+        run: cd js && npm ci
+
+      - name: Build shared TypeScript declarations
+        run: cd js && npm exec tsc
+
+      - name: Build standard package shell
+        run: node scripts/build-npm-package.mjs standard
+
+      - name: Install playground dependencies
+        run: cd packages/playground && npm ci
+
+      - name: Build playground site
+        run: cd packages/playground && npm run build:release
+
+      - name: Validate Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/playground
+          command: pages deploy dist --project-name cereusdb-playground --branch main
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [version, publish, deploy-docs, deploy-playground]
+    if: ${{ github.event_name == 'push' && needs.version.outputs.dry_run != 'true' }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: dist
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/minimal/cereusdb_bg.wasm
+            dist/standard/cereusdb_bg.wasm
+            dist/global/cereusdb_bg.wasm
+            dist/full/cereusdb_bg.wasm
+          prerelease: ${{ needs.version.outputs.npm_tag == 'dev' }}
+          generate_release_notes: true
+          body: |
+            ## CereusDB v${{ needs.version.outputs.version }}
+
+            ### npm packages
+            - `@cereusdb/minimal`
+            - `@cereusdb/standard`
+            - `@cereusdb/global`
+            - `@cereusdb/full`
+
+            ### Installation
+            ```bash
+            npm install @cereusdb/minimal@${{ needs.version.outputs.version }}
+            npm install @cereusdb/standard@${{ needs.version.outputs.version }}
+            npm install @cereusdb/global@${{ needs.version.outputs.version }}
+            npm install @cereusdb/full@${{ needs.version.outputs.version }}
+            ```

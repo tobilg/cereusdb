@@ -1,0 +1,52 @@
+{
+  "name": "@cereusdb/standard",
+  "version": "0.0.1",
+  "description": "Standard CereusDB browser package with GEOS and PROJ support",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./wasm": "./dist/wasm/cereusdb_bg.wasm",
+    "./wasm/*": "./dist/wasm/*"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-npm-package.mjs standard",
+    "prepack": "npm run build",
+    "test": "cd ../../js && npm run test:standard"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "cereusdb",
+    "geospatial",
+    "spatial",
+    "sql",
+    "wasm",
+    "webassembly",
+    "proj"
+  ],
+  "author": "tobilg",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tobilg/cereusdb",
+    "directory": "packages/standard"
+  },
+  "bugs": {
+    "url": "https://github.com/tobilg/cereusdb/issues"
+  },
+  "homepage": "https://github.com/tobilg/cereusdb#readme",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

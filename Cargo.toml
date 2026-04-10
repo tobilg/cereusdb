@@ -1,0 +1,49 @@
+[workspace]
+members = [
+    "rust/cereusdb",
+    "rust/cereusdb-object-store",
+]
+exclude = [
+    "deps/sedona-db",
+    "build/patched-sources/sedona-db",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.1"
+license = "Apache-2.0"
+edition = "2021"
+
+[workspace.dependencies]
+# Only deps needed by OUR crates (not sedona-db's)
+arrow = { version = "57.0.0", features = ["prettyprint", "ffi", "chrono-tz"] }
+arrow-array = { version = "57.0.0" }
+arrow-ipc = { version = "57.0.0" }
+arrow-json = { version = "57.0.0" }
+arrow-schema = { version = "57.0.0" }
+async-trait = { version = "0.1.87" }
+bytes = "1.11"
+chrono = { version = "0.4.41", default-features = false }
+datafusion = { version = "51.0.0", default-features = false }
+datafusion-common = { version = "51.0.0", default-features = false }
+datafusion-expr = { version = "51.0.0" }
+futures = "0.3"
+geo-types = "0.7.17"
+geojson = "0.24.2"
+log = "^0.4"
+object_store = { version = "0.12.4", default-features = false }
+serde_json = { version = "1" }
+url = "2.5.7"
+wkb = "0.9.2"
+
+[patch.crates-io]
+geos-sys = { path = "build/patched-sources/georust-geos/sys" }
+geos = { path = "build/patched-sources/georust-geos" }
+proj-sys = { path = "build/patched-sources/georust-proj/proj-sys" }
+gdal-sys = { path = "build/patched-sources/georust-gdal/gdal-sys" }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "z"
+panic = "unwind"

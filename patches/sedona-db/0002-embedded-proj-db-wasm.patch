@@ -1,0 +1,490 @@
+diff --git a/c/sedona-proj/Cargo.toml b/c/sedona-proj/Cargo.toml
+index c6b7081..e20896c 100644
+--- a/c/sedona-proj/Cargo.toml
++++ b/c/sedona-proj/Cargo.toml
+@@ -10,6 +10,7 @@ version = "0.4.0"
+ license = "Apache-2.0"
+ edition = "2021"
+ description = "Sedona PROJ integration (WASM-patched)"
++build = "build.rs"
+ 
+ [features]
+ default = ["proj-sys"]
+diff --git a/c/sedona-proj/build.rs b/c/sedona-proj/build.rs
+new file mode 100644
+index 0000000..512ff16
+--- /dev/null
++++ b/c/sedona-proj/build.rs
+@@ -0,0 +1,69 @@
++use std::env;
++use std::fs;
++use std::path::PathBuf;
++use std::process::Command;
++
++fn main() {
++    println!("cargo:rerun-if-env-changed=SEDONA_WASM_PROJ_DB_PATH");
++    println!("cargo:rerun-if-env-changed=SQLITE3_INCLUDE_DIR");
++    println!("cargo:rerun-if-changed=src/proj_memvfs.c");
++
++    if env::var("CARGO_CFG_TARGET_ARCH").as_deref() != Ok("wasm32") {
++        return;
++    }
++
++    let proj_db_path = env::var("SEDONA_WASM_PROJ_DB_PATH")
++        .expect("SEDONA_WASM_PROJ_DB_PATH must point to proj.db for wasm32 builds");
++    let sqlite_include_dir = env::var("SQLITE3_INCLUDE_DIR")
++        .expect("SQLITE3_INCLUDE_DIR must point to the SQLite headers for wasm32 builds");
++    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set"));
++
++    println!("cargo:rerun-if-changed={proj_db_path}");
++
++    let generated_rs = out_dir.join("embedded_proj_db.rs");
++    let generated = format!(
++        "pub static PROJ_DB: &[u8] = include_bytes!(r#\"{}\"#);\n",
++        proj_db_path
++    );
++    fs::write(&generated_rs, generated).expect("Failed to write embedded proj.db module");
++
++    let obj_path = out_dir.join("proj_memvfs.o");
++    let lib_path = out_dir.join("libsedona_proj_memvfs.a");
++
++    run(
++        "emcc",
++        &[
++            "-c".to_string(),
++            "src/proj_memvfs.c".to_string(),
++            "-o".to_string(),
++            obj_path.display().to_string(),
++            "-I".to_string(),
++            sqlite_include_dir,
++            "-Oz".to_string(),
++            "-DNDEBUG".to_string(),
++        ],
++    );
++
++    run(
++        "emar",
++        &[
++            "crs".to_string(),
++            lib_path.display().to_string(),
++            obj_path.display().to_string(),
++        ],
++    );
++
++    println!("cargo:rustc-link-search=native={}", out_dir.display());
++    println!("cargo:rustc-link-lib=static=sedona_proj_memvfs");
++}
++
++fn run(program: &str, args: &[String]) {
++    let status = Command::new(program)
++        .args(args)
++        .status()
++        .unwrap_or_else(|error| panic!("Failed to run {program}: {error}"));
++
++    if !status.success() {
++        panic!("{program} failed with status {status}");
++    }
++}
+diff --git a/c/sedona-proj/src/lib.rs b/c/sedona-proj/src/lib.rs
+index 632b116..72eae71 100644
+--- a/c/sedona-proj/src/lib.rs
++++ b/c/sedona-proj/src/lib.rs
+@@ -19,6 +19,8 @@ mod dyn_load;
+ pub mod error;
+ mod proj;
+ mod proj_dyn_bindgen;
++#[cfg(target_arch = "wasm32")]
++mod proj_embedded_db;
+ pub mod provider;
+ pub mod register;
+ pub mod sd_order_lnglat;
+diff --git a/c/sedona-proj/src/proj.rs b/c/sedona-proj/src/proj.rs
+index 5d36eae..9d86d85 100644
+--- a/c/sedona-proj/src/proj.rs
++++ b/c/sedona-proj/src/proj.rs
+@@ -95,6 +95,9 @@ mod wasm_proj {
+     pub unsafe fn proj_context_errno_string(c: Ctx, e: i32) -> *const i8 {
+         proj_sys::proj_context_errno_string(ctx(c), e)
+     }
++    pub unsafe fn proj_context_set_sqlite3_vfs_name(c: Ctx, name: *const i8) {
++        proj_sys::proj_context_set_sqlite3_vfs_name(ctx(c), name)
++    }
+     pub unsafe fn proj_context_set_database_path(c: Ctx, p: *const i8, a: *const *const i8, n: *const *const i8) -> i32 {
+         proj_sys::proj_context_set_database_path(ctx(c), p, a, n)
+     }
+@@ -203,6 +206,16 @@ impl ProjContext {
+         }
+     }
+ 
++    #[cfg(target_arch = "wasm32")]
++    pub(crate) fn set_sqlite3_vfs_name(&mut self, name: &str) -> Result<(), SedonaProjError> {
++        let name_c_string = CString::new(name)
++            .map_err(|_| SedonaProjError::Invalid("Embedded nul in rust string".to_string()))?;
++        unsafe {
++            wasm_proj::proj_context_set_sqlite3_vfs_name(self.inner, name_c_string.as_ptr());
++        }
++        Ok(())
++    }
++
+     /// Set the logging level for PROJ operations
+     ///
+     /// `level` - Unsigned Integer value representing the log level:
+diff --git a/c/sedona-proj/src/proj_embedded_db.rs b/c/sedona-proj/src/proj_embedded_db.rs
+new file mode 100644
+index 0000000..73dded2
+--- /dev/null
++++ b/c/sedona-proj/src/proj_embedded_db.rs
+@@ -0,0 +1,36 @@
++use std::sync::OnceLock;
++
++use crate::{error::SedonaProjError, proj::ProjContext};
++
++include!(concat!(env!("OUT_DIR"), "/embedded_proj_db.rs"));
++
++unsafe extern "C" {
++    fn sedona_proj_register_memvfs() -> i32;
++}
++
++static MEMVFS_INIT: OnceLock<Result<(), String>> = OnceLock::new();
++
++pub(crate) fn configure_embedded_proj_database(ctx: &mut ProjContext) -> Result<(), SedonaProjError> {
++    let registration = MEMVFS_INIT.get_or_init(|| {
++        let status = unsafe { sedona_proj_register_memvfs() };
++        if status == 0 {
++            Ok(())
++        } else {
++            Err(format!("Failed to register SQLite memvfs (status {status})"))
++        }
++    });
++
++    if let Err(message) = registration {
++        return Err(SedonaProjError::LibraryError(message.clone()));
++    }
++
++    ctx.set_sqlite3_vfs_name("memvfs")?;
++
++    let uri = format!(
++        "file:/proj.db?immutable=1&ptr={:#x}&sz={}&max={}",
++        PROJ_DB.as_ptr() as usize,
++        PROJ_DB.len(),
++        PROJ_DB.len()
++    );
++    ctx.set_database_path(&uri)
++}
+diff --git a/c/sedona-proj/src/proj_memvfs.c b/c/sedona-proj/src/proj_memvfs.c
+new file mode 100644
+index 0000000..c6dcbb2
+--- /dev/null
++++ b/c/sedona-proj/src/proj_memvfs.c
+@@ -0,0 +1,297 @@
++#include "sqlite3.h"
++
++#include <stdint.h>
++#include <string.h>
++
++typedef struct {
++    sqlite3_file base;
++    const unsigned char *data;
++    sqlite3_int64 size;
++} SedonaProjMemFile;
++
++static int mem_close(sqlite3_file *file) {
++    (void)file;
++    return SQLITE_OK;
++}
++
++static int mem_read(sqlite3_file *file, void *buffer, int amount, sqlite3_int64 offset) {
++    SedonaProjMemFile *mem_file = (SedonaProjMemFile *)file;
++
++    if (offset >= mem_file->size) {
++        memset(buffer, 0, (size_t)amount);
++        return SQLITE_IOERR_SHORT_READ;
++    }
++
++    sqlite3_int64 available = mem_file->size - offset;
++    if (available < amount) {
++        memcpy(buffer, mem_file->data + offset, (size_t)available);
++        memset((unsigned char *)buffer + available, 0, (size_t)(amount - available));
++        return SQLITE_IOERR_SHORT_READ;
++    }
++
++    memcpy(buffer, mem_file->data + offset, (size_t)amount);
++    return SQLITE_OK;
++}
++
++static int mem_write(sqlite3_file *file, const void *buffer, int amount, sqlite3_int64 offset) {
++    (void)file;
++    (void)buffer;
++    (void)amount;
++    (void)offset;
++    return SQLITE_READONLY;
++}
++
++static int mem_truncate(sqlite3_file *file, sqlite3_int64 size) {
++    (void)file;
++    (void)size;
++    return SQLITE_READONLY;
++}
++
++static int mem_sync(sqlite3_file *file, int flags) {
++    (void)file;
++    (void)flags;
++    return SQLITE_OK;
++}
++
++static int mem_file_size(sqlite3_file *file, sqlite3_int64 *size) {
++    SedonaProjMemFile *mem_file = (SedonaProjMemFile *)file;
++    *size = mem_file->size;
++    return SQLITE_OK;
++}
++
++static int mem_lock(sqlite3_file *file, int lock_type) {
++    (void)file;
++    (void)lock_type;
++    return SQLITE_OK;
++}
++
++static int mem_unlock(sqlite3_file *file, int lock_type) {
++    (void)file;
++    (void)lock_type;
++    return SQLITE_OK;
++}
++
++static int mem_check_reserved_lock(sqlite3_file *file, int *result) {
++    (void)file;
++    *result = 0;
++    return SQLITE_OK;
++}
++
++static int mem_file_control(sqlite3_file *file, int operation, void *arg) {
++    (void)file;
++    (void)operation;
++    (void)arg;
++    return SQLITE_NOTFOUND;
++}
++
++static int mem_sector_size(sqlite3_file *file) {
++    (void)file;
++    return 4096;
++}
++
++static int mem_device_characteristics(sqlite3_file *file) {
++    (void)file;
++#ifdef SQLITE_IOCAP_IMMUTABLE
++    return SQLITE_IOCAP_IMMUTABLE;
++#else
++    return 0;
++#endif
++}
++
++static int mem_shm_map(sqlite3_file *file, int page, int page_size, int extend, void volatile **out) {
++    (void)file;
++    (void)page;
++    (void)page_size;
++    (void)extend;
++    (void)out;
++    return SQLITE_IOERR_SHMMAP;
++}
++
++static int mem_shm_lock(sqlite3_file *file, int offset, int count, int flags) {
++    (void)file;
++    (void)offset;
++    (void)count;
++    (void)flags;
++    return SQLITE_IOERR_SHMLOCK;
++}
++
++static void mem_shm_barrier(sqlite3_file *file) {
++    (void)file;
++}
++
++static int mem_shm_unmap(sqlite3_file *file, int delete_flags) {
++    (void)file;
++    (void)delete_flags;
++    return SQLITE_OK;
++}
++
++static int mem_fetch(sqlite3_file *file, sqlite3_int64 offset, int amount, void **out) {
++    SedonaProjMemFile *mem_file = (SedonaProjMemFile *)file;
++    if (offset < 0 || offset + amount > mem_file->size) {
++        *out = 0;
++        return SQLITE_OK;
++    }
++    *out = (void *)(mem_file->data + offset);
++    return SQLITE_OK;
++}
++
++static int mem_unfetch(sqlite3_file *file, sqlite3_int64 offset, void *page) {
++    (void)file;
++    (void)offset;
++    (void)page;
++    return SQLITE_OK;
++}
++
++static const sqlite3_io_methods mem_io_methods = {
++    3,
++    mem_close,
++    mem_read,
++    mem_write,
++    mem_truncate,
++    mem_sync,
++    mem_file_size,
++    mem_lock,
++    mem_unlock,
++    mem_check_reserved_lock,
++    mem_file_control,
++    mem_sector_size,
++    mem_device_characteristics,
++    mem_shm_map,
++    mem_shm_lock,
++    mem_shm_barrier,
++    mem_shm_unmap,
++    mem_fetch,
++    mem_unfetch,
++};
++
++static int mem_open(sqlite3_vfs *vfs, const char *name, sqlite3_file *file, int flags, int *out_flags) {
++    SedonaProjMemFile *mem_file = (SedonaProjMemFile *)file;
++    memset(mem_file, 0, sizeof(*mem_file));
++
++    if ((flags & SQLITE_OPEN_MAIN_DB) == 0) {
++        return SQLITE_CANTOPEN;
++    }
++
++    sqlite3_int64 ptr = sqlite3_uri_int64(name, "ptr", 0);
++    sqlite3_int64 size = sqlite3_uri_int64(name, "sz", -1);
++    if (ptr == 0 || size < 0) {
++        return SQLITE_CANTOPEN;
++    }
++
++    mem_file->data = (const unsigned char *)(uintptr_t)ptr;
++    mem_file->size = size;
++    mem_file->base.pMethods = &mem_io_methods;
++
++    if (out_flags != 0) {
++        *out_flags = flags;
++    }
++
++    (void)vfs;
++    return SQLITE_OK;
++}
++
++static int mem_delete(sqlite3_vfs *vfs, const char *name, int sync_dir) {
++    (void)vfs;
++    (void)name;
++    (void)sync_dir;
++    return SQLITE_IOERR_DELETE;
++}
++
++static int mem_access(sqlite3_vfs *vfs, const char *name, int flags, int *result) {
++    (void)vfs;
++    (void)flags;
++    *result = sqlite3_uri_int64(name, "ptr", 0) != 0;
++    return SQLITE_OK;
++}
++
++static int mem_full_pathname(sqlite3_vfs *vfs, const char *name, int out_size, char *out) {
++    (void)vfs;
++    sqlite3_snprintf(out_size, out, "%s", name);
++    return SQLITE_OK;
++}
++
++static void *mem_dl_open(sqlite3_vfs *vfs, const char *name) {
++    sqlite3_vfs *orig = (sqlite3_vfs *)vfs->pAppData;
++    return orig != 0 && orig->xDlOpen != 0 ? orig->xDlOpen(orig, name) : 0;
++}
++
++static void mem_dl_error(sqlite3_vfs *vfs, int out_size, char *out) {
++    sqlite3_vfs *orig = (sqlite3_vfs *)vfs->pAppData;
++    if (orig != 0 && orig->xDlError != 0) {
++        orig->xDlError(orig, out_size, out);
++        return;
++    }
++    if (out_size > 0) {
++        out[0] = '\0';
++    }
++}
++
++static void (*mem_dl_sym(sqlite3_vfs *vfs, void *handle, const char *symbol))(void) {
++    sqlite3_vfs *orig = (sqlite3_vfs *)vfs->pAppData;
++    return orig != 0 && orig->xDlSym != 0 ? orig->xDlSym(orig, handle, symbol) : 0;
++}
++
++static void mem_dl_close(sqlite3_vfs *vfs, void *handle) {
++    sqlite3_vfs *orig = (sqlite3_vfs *)vfs->pAppData;
++    if (orig != 0 && orig->xDlClose != 0) {
++        orig->xDlClose(orig, handle);
++    }
++}
++
++static int mem_randomness(sqlite3_vfs *vfs, int out_size, char *out) {
++    sqlite3_vfs *orig = (sqlite3_vfs *)vfs->pAppData;
++    return orig != 0 && orig->xRandomness != 0 ? orig->xRandomness(orig, out_size, out) : 0;
++}
++
++static int mem_sleep(sqlite3_vfs *vfs, int microseconds) {
++    sqlite3_vfs *orig = (sqlite3_vfs *)vfs->pAppData;
++    return orig != 0 && orig->xSleep != 0 ? orig->xSleep(orig, microseconds) : 0;
++}
++
++static int mem_current_time(sqlite3_vfs *vfs, double *out) {
++    sqlite3_vfs *orig = (sqlite3_vfs *)vfs->pAppData;
++    return orig != 0 && orig->xCurrentTime != 0 ? orig->xCurrentTime(orig, out) : SQLITE_OK;
++}
++
++static int mem_get_last_error(sqlite3_vfs *vfs, int out_size, char *out) {
++    sqlite3_vfs *orig = (sqlite3_vfs *)vfs->pAppData;
++    return orig != 0 && orig->xGetLastError != 0 ? orig->xGetLastError(orig, out_size, out) : SQLITE_OK;
++}
++
++static int mem_current_time_int64(sqlite3_vfs *vfs, sqlite3_int64 *out) {
++    sqlite3_vfs *orig = (sqlite3_vfs *)vfs->pAppData;
++    return orig != 0 && orig->xCurrentTimeInt64 != 0 ? orig->xCurrentTimeInt64(orig, out) : SQLITE_OK;
++}
++
++static sqlite3_vfs mem_vfs = {
++    2,
++    sizeof(SedonaProjMemFile),
++    1024,
++    0,
++    "memvfs",
++    0,
++    mem_open,
++    mem_delete,
++    mem_access,
++    mem_full_pathname,
++    mem_dl_open,
++    mem_dl_error,
++    mem_dl_sym,
++    mem_dl_close,
++    mem_randomness,
++    mem_sleep,
++    mem_current_time,
++    mem_get_last_error,
++    mem_current_time_int64,
++};
++
++int sedona_proj_register_memvfs(void) {
++    sqlite3_vfs *orig = sqlite3_vfs_find(0);
++    if (orig == 0) {
++        return SQLITE_ERROR;
++    }
++
++    sqlite3_initialize();
++    mem_vfs.pAppData = orig;
++    return sqlite3_vfs_register(&mem_vfs, 0);
++}
+diff --git a/c/sedona-proj/src/transform.rs b/c/sedona-proj/src/transform.rs
+index 75af6c4..b934b01 100644
+--- a/c/sedona-proj/src/transform.rs
++++ b/c/sedona-proj/src/transform.rs
+@@ -117,6 +117,9 @@ impl ProjCrsEngineBuilder {
+         #[cfg(target_arch = "wasm32")]
+         let mut ctx = ProjContext::try_from_proj_sys()?;
+ 
++        #[cfg(target_arch = "wasm32")]
++        crate::proj_embedded_db::configure_embedded_proj_database(&mut ctx)?;
++
+         if let Some(database_path) = &self.database_path {
+             ctx.set_database_path(database_path.to_string_lossy().as_ref())?;
+         }

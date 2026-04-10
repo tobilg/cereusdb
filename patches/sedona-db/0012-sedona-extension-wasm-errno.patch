@@ -1,0 +1,36 @@
+diff --git a/c/sedona-extension/src/scalar_kernel.rs b/c/sedona-extension/src/scalar_kernel.rs
+index ad6b5e33..fa710d30 100644
+--- a/c/sedona-extension/src/scalar_kernel.rs
++++ b/c/sedona-extension/src/scalar_kernel.rs
+@@ -613,7 +613,7 @@ unsafe extern "C" fn c_kernel_init(
+         Err(err) => {
+             private_data.last_error =
+                 CString::from_str(&err.message()).unwrap_or(CString::default());
+-            libc::EINVAL
++            invalid_argument_errno()
+         }
+     }
+ }
+@@ -643,11 +643,21 @@ unsafe extern "C" fn c_kernel_execute(
+         Err(err) => {
+             private_data.last_error =
+                 CString::from_str(&err.message()).unwrap_or(CString::default());
+-            libc::EINVAL
++            invalid_argument_errno()
+         }
+     }
++}
++
++#[cfg(target_os = "unknown")]
++const fn invalid_argument_errno() -> c_int {
++    22
+ }
+ 
++#[cfg(not(target_os = "unknown"))]
++const fn invalid_argument_errno() -> c_int {
++    libc::EINVAL
++}
++
+ /// C Callable wrapper to retrieve the last error string
+ unsafe extern "C" fn c_kernel_last_error(self_: *mut SedonaCScalarKernelImpl) -> *const c_char {
+     assert!(!self_.is_null());

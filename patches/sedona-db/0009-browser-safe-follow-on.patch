@@ -1,0 +1,334 @@
+diff --git a/rust/sedona-functions/src/lib.rs b/rust/sedona-functions/src/lib.rs
+index af5bea9c..c51442ab 100644
+--- a/rust/sedona-functions/src/lib.rs
++++ b/rust/sedona-functions/src/lib.rs
+@@ -22,6 +22,7 @@ pub mod register;
+ mod sd_format;
+ pub mod sd_order;
+ mod sd_simplifystorage;
++mod st_asewkt;
+ mod st_affine;
+ mod st_affine_helpers;
+ pub mod st_analyze_agg;
+diff --git a/rust/sedona-functions/src/register.rs b/rust/sedona-functions/src/register.rs
+index 233c0ffd..f67b65e6 100644
+--- a/rust/sedona-functions/src/register.rs
++++ b/rust/sedona-functions/src/register.rs
+@@ -40,6 +40,7 @@ pub fn default_function_set() -> FunctionSet {
+         crate::sd_simplifystorage::sd_simplifystorage_udf,
+         crate::st_affine::st_affine_udf,
+         crate::st_asbinary::st_asbinary_udf,
++        crate::st_asewkt::st_asewkt_udf,
+         crate::st_asewkb::st_asewkb_udf,
+         crate::st_astext::st_astext_udf,
+         crate::st_azimuth::st_azimuth_udf,
+diff --git a/rust/sedona-functions/src/st_asewkt.rs b/rust/sedona-functions/src/st_asewkt.rs
+new file mode 100644
+index 00000000..40a08e5f
+--- /dev/null
++++ b/rust/sedona-functions/src/st_asewkt.rs
+@@ -0,0 +1,304 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++use std::{fmt::Write, sync::Arc, vec};
++
++use arrow_array::builder::StringBuilder;
++use arrow_schema::DataType;
++use datafusion_common::{
++    cast::{as_string_view_array, as_struct_array},
++    error::{DataFusionError, Result},
++    exec_datafusion_err, exec_err, ScalarValue,
++};
++use datafusion_expr::{ColumnarValue, Volatility};
++use sedona_common::sedona_internal_err;
++use sedona_expr::scalar_udf::{SedonaScalarKernel, SedonaScalarUDF};
++use sedona_schema::{crs::deserialize_crs, datatypes::SedonaType, matchers::ArgMatcher};
++
++use crate::executor::WkbExecutor;
++
++/// ST_AsEWKT() scalar UDF implementation
++///
++/// An implementation of EWKT writing using GeoRust's WKT writer together with
++/// Sedona CRS metadata. When the CRS can be represented as a single SRID, the
++/// output uses the `SRID=<srid>;...` prefix. Otherwise the function errors.
++pub fn st_asewkt_udf() -> SedonaScalarUDF {
++    SedonaScalarUDF::new(
++        "st_asewkt",
++        vec![Arc::new(STAsEWKTItemCrs {}), Arc::new(STAsEWKT {})],
++        Volatility::Immutable,
++    )
++}
++
++#[derive(Debug)]
++struct STAsEWKT {}
++
++impl SedonaScalarKernel for STAsEWKT {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        let matcher = ArgMatcher::new(
++            vec![ArgMatcher::is_geometry_or_geography()],
++            SedonaType::Arrow(DataType::Utf8),
++        );
++
++        matcher.match_args(args)
++    }
++
++    fn invoke_batch(
++        &self,
++        arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        let executor = WkbExecutor::new(arg_types, args);
++        let mut builder =
++            StringBuilder::with_capacity(executor.num_iterations(), executor.num_iterations() * 32);
++
++        let maybe_srid = match &arg_types[0] {
++            SedonaType::Wkb(_, crs) | SedonaType::WkbView(_, crs) => match crs {
++                Some(crs) => match crs.srid()? {
++                    Some(0) => None,
++                    Some(srid) => Some(srid),
++                    _ => return exec_err!("CRS {crs} cannot be represented by a single SRID"),
++                },
++                None => None,
++            },
++            SedonaType::Arrow(DataType::Null) => None,
++            _ => return sedona_internal_err!("Unexpected input to invoke_batch in ST_AsEWKT"),
++        };
++
++        executor.execute_wkb_void(|maybe_item| {
++            match maybe_item {
++                Some(item) => {
++                    let mut value = String::new();
++                    if let Some(srid) = maybe_srid {
++                        write!(&mut value, "SRID={srid};")
++                            .expect("writing to a String must not fail");
++                    }
++                    wkt::to_wkt::write_geometry(&mut value, &item)
++                        .map_err(|err| DataFusionError::External(Box::new(err)))?;
++                    builder.append_value(value);
++                }
++                None => builder.append_null(),
++            };
++
++            Ok(())
++        })?;
++
++        executor.finish(Arc::new(builder.finish()))
++    }
++}
++
++#[derive(Debug)]
++struct STAsEWKTItemCrs {}
++
++impl SedonaScalarKernel for STAsEWKTItemCrs {
++    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
++        let matcher = ArgMatcher::new(
++            vec![ArgMatcher::is_item_crs()],
++            SedonaType::Arrow(DataType::Utf8),
++        );
++
++        matcher.match_args(args)
++    }
++
++    fn invoke_batch(
++        &self,
++        arg_types: &[SedonaType],
++        args: &[ColumnarValue],
++    ) -> Result<ColumnarValue> {
++        let executor = WkbExecutor::new(arg_types, args);
++        let mut builder =
++            StringBuilder::with_capacity(executor.num_iterations(), executor.num_iterations() * 32);
++
++        let crs_array_ref = match &args[0] {
++            ColumnarValue::Array(array) => {
++                let struct_array = as_struct_array(array)?;
++                struct_array.column(1).clone()
++            }
++            ColumnarValue::Scalar(ScalarValue::Struct(struct_array)) => {
++                struct_array.column(1).clone()
++            }
++            _ => return sedona_internal_err!("Unexpected item_crs type"),
++        };
++
++        let crs_array = as_string_view_array(&crs_array_ref)?;
++        let mut srid_iter = crs_array
++            .into_iter()
++            .map(|maybe_crs_str| match maybe_crs_str {
++                None => Ok(None),
++                Some(crs_str) => {
++                    match deserialize_crs(crs_str)
++                        .map_err(|e| exec_datafusion_err!("{}", e.message()))?
++                    {
++                        None => Ok(None),
++                        Some(crs) => match crs.srid()? {
++                            Some(0) => Ok(None),
++                            Some(srid) => Ok(Some(srid)),
++                            _ => exec_err!("CRS {crs} cannot be represented by a single SRID"),
++                        },
++                    }
++                }
++            });
++
++        executor.execute_wkb_void(|maybe_item| {
++            let maybe_srid = srid_iter.next().unwrap()?;
++
++            match maybe_item {
++                Some(item) => {
++                    let mut value = String::new();
++                    if let Some(srid) = maybe_srid {
++                        write!(&mut value, "SRID={srid};")
++                            .expect("writing to a String must not fail");
++                    }
++                    wkt::to_wkt::write_geometry(&mut value, &item)
++                        .map_err(|err| DataFusionError::External(Box::new(err)))?;
++                    builder.append_value(value);
++                }
++                None => builder.append_null(),
++            };
++
++            Ok(())
++        })?;
++
++        executor.finish(Arc::new(builder.finish()))
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use arrow_array::{create_array, ArrayRef};
++    use datafusion_common::scalar::ScalarValue;
++    use datafusion_expr::ScalarUDF;
++    use rstest::rstest;
++    use sedona_schema::{
++        crs::{deserialize_crs, lnglat},
++        datatypes::{Edges, SedonaType, WKB_GEOGRAPHY, WKB_GEOGRAPHY_ITEM_CRS, WKB_GEOMETRY, WKB_GEOMETRY_ITEM_CRS, WKB_VIEW_GEOGRAPHY, WKB_VIEW_GEOMETRY},
++    };
++    use sedona_testing::{
++        compare::{assert_array_equal, assert_scalar_equal},
++        create::{create_array_item_crs, create_scalar_item_crs},
++        testers::ScalarUdfTester,
++    };
++
++    use super::*;
++
++    #[test]
++    fn udf_metadata() {
++        let udf: ScalarUDF = st_asewkt_udf().into();
++        assert_eq!(udf.name(), "st_asewkt");
++    }
++
++    #[rstest]
++    fn udf_no_srid(
++        #[values(WKB_GEOMETRY, WKB_GEOGRAPHY, WKB_VIEW_GEOMETRY, WKB_VIEW_GEOGRAPHY, WKB_GEOMETRY_ITEM_CRS.clone(), WKB_GEOGRAPHY_ITEM_CRS.clone())]
++        sedona_type: SedonaType,
++    ) {
++        let udf = st_asewkt_udf();
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type]);
++
++        assert_scalar_equal(
++            &tester.invoke_wkb_scalar(Some("POINT (1 2)")).unwrap(),
++            &ScalarValue::Utf8(Some("POINT(1 2)".to_string())),
++        );
++
++        assert_scalar_equal(
++            &tester.invoke_wkb_scalar(None).unwrap(),
++            &ScalarValue::Utf8(None),
++        );
++
++        let expected_array: ArrayRef =
++            create_array!(Utf8, [Some("POINT(1 2)"), None, Some("POINT(3 5)")]);
++        assert_array_equal(
++            &tester
++                .invoke_wkb_array(vec![Some("POINT (1 2)"), None, Some("POINT (3 5)")])
++                .unwrap(),
++            &expected_array,
++        );
++    }
++
++    #[rstest]
++    fn udf_srid_from_type(
++        #[values(
++            SedonaType::Wkb(Edges::Planar, lnglat()),
++            SedonaType::Wkb(Edges::Spherical, lnglat())
++        )]
++        sedona_type: SedonaType,
++    ) {
++        let udf = st_asewkt_udf();
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type]);
++
++        assert_scalar_equal(
++            &tester.invoke_wkb_scalar(Some("POINT (1 2)")).unwrap(),
++            &ScalarValue::Utf8(Some("SRID=4326;POINT(1 2)".to_string())),
++        );
++    }
++
++    #[test]
++    fn udf_srid_from_item_crs() {
++        let udf = st_asewkt_udf();
++        let tester = ScalarUdfTester::new(udf.into(), vec![WKB_GEOMETRY_ITEM_CRS.clone()]);
++
++        let scalar_with_srid =
++            create_scalar_item_crs(Some("POINT (1 2)"), Some("EPSG:4326"), &WKB_GEOMETRY);
++        assert_scalar_equal(
++            &tester.invoke_scalar(scalar_with_srid).unwrap(),
++            &ScalarValue::Utf8(Some("SRID=4326;POINT(1 2)".to_string())),
++        );
++
++        let array_with_srid = create_array_item_crs(
++            &[Some("POINT (1 2)"), None, Some("POINT (1 2)")],
++            [Some("EPSG:4326"), None, Some("EPSG:4326")],
++            &WKB_GEOMETRY,
++        );
++        let expected_array: ArrayRef = create_array!(
++            Utf8,
++            [Some("SRID=4326;POINT(1 2)"), None, Some("SRID=4326;POINT(1 2)")]
++        );
++        assert_array_equal(&tester.invoke_array(array_with_srid).unwrap(), &expected_array);
++    }
++
++    #[test]
++    fn udf_invalid_type_crs() {
++        let udf = st_asewkt_udf();
++
++        let crs_where_srid_returns_none = deserialize_crs("EPSG:9999999999").unwrap();
++        let sedona_type = SedonaType::Wkb(Edges::Planar, crs_where_srid_returns_none);
++
++        let tester = ScalarUdfTester::new(udf.into(), vec![sedona_type]);
++        let err = tester.invoke_wkb_scalar(Some("POINT (1 2)")).unwrap_err();
++        assert_eq!(
++            err.message(),
++            "CRS epsg:9999999999 cannot be represented by a single SRID"
++        );
++    }
++
++    #[test]
++    fn udf_invalid_item_crs() {
++        let udf = st_asewkt_udf();
++        let tester = ScalarUdfTester::new(udf.into(), vec![WKB_GEOMETRY_ITEM_CRS.clone()]);
++
++        let scalar_with_srid_outside_u32 = create_scalar_item_crs(
++            Some("POINT (1 2)"),
++            Some("EPSG:999999999999"),
++            &WKB_GEOMETRY,
++        );
++        let err = tester.invoke_scalar(scalar_with_srid_outside_u32).unwrap_err();
++        assert_eq!(
++            err.message(),
++            "CRS epsg:999999999999 cannot be represented by a single SRID"
++        );
++    }
++}

@@ -1,0 +1,70 @@
+diff --git a/c/sedona-tg/build.rs b/c/sedona-tg/build.rs
+index 3ea82e9c..fd7aa8ac 100644
+--- a/c/sedona-tg/build.rs
++++ b/c/sedona-tg/build.rs
+@@ -15,9 +15,18 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++use std::env;
++use std::path::PathBuf;
++use std::process::Command;
++
+ fn main() {
+     println!("cargo:rerun-if-changed=src/tg/tg.c");
+ 
++    if env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32") {
++        build_wasm();
++        return;
++    }
++
+     cc::Build::new()
+         .file("src/tg/tg.c")
+         // MSVC needs some extra flags to support tg's use of atomics
+@@ -25,3 +34,46 @@ fn main() {
+         .flag_if_supported("/experimental:c11atomics")
+         .compile("tg");
+ }
++
++fn build_wasm() {
++    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set"));
++    let obj_path = out_dir.join("tg.o");
++    let lib_path = out_dir.join("libtg.a");
++
++    run(
++        "emcc",
++        &[
++            "-c".to_string(),
++            "src/tg/tg.c".to_string(),
++            "-o".to_string(),
++            obj_path.display().to_string(),
++            "-std=c11".to_string(),
++            "-D_DEFAULT_SOURCE".to_string(),
++            "-Oz".to_string(),
++            "-DNDEBUG".to_string(),
++        ],
++    );
++
++    run(
++        "emar",
++        &[
++            "crs".to_string(),
++            lib_path.display().to_string(),
++            obj_path.display().to_string(),
++        ],
++    );
++
++    println!("cargo:rustc-link-search=native={}", out_dir.display());
++    println!("cargo:rustc-link-lib=static=tg");
++}
++
++fn run(program: &str, args: &[String]) {
++    let status = Command::new(program)
++        .args(args)
++        .status()
++        .unwrap_or_else(|error| panic!("Failed to run {program}: {error}"));
++
++    if !status.success() {
++        panic!("{program} failed with status {status}");
++    }
++}

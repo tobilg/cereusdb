@@ -1,0 +1,836 @@
+# Runtime Surface Report
+
+Generated: 2026-04-09T07:45:41.927Z
+
+This report is generated from the built browser packages under `dist/` and the
+local SedonaDB/Rust docs catalog under `deps/sedona-db/docs/reference/sql`.
+Regenerate it with `make surface-report`.
+
+## Local Docs Snapshot
+
+- Local `ST_*` qmd pages: 113
+- Local `RS_*` qmd pages: 33
+- Local spatial qmd pages considered here: 146
+
+## Package Summary
+
+| Package | Runtime `ST_*` | Runtime `RS_*` | Runtime-only names | Docs-only names |
+|---|---:|---:|---:|---:|
+| `geos` | 130 | 0 | 18 | 34 |
+| `geos-proj` | 131 | 0 | 18 | 33 |
+| `geos-proj-s2` | 132 | 0 | 19 | 33 |
+| `full` | 132 | 33 | 19 | 0 |
+
+## Common Runtime-only Names
+
+These names are exposed at runtime but do not have standalone local qmd pages.
+They include compatibility aliases and patch-added functions.
+
+- `st_asewkt`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_aswkb`: runtime alias of `ST_AsBinary`
+- `st_aswkt`: runtime alias of `ST_AsText`
+- `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
+- `st_geogtogeometry`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geometryfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromgeojson`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geomfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
+- `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+
+## Package: `geos`
+
+- Runtime `ST_*` names: 130
+- Runtime `RS_*` names: 0
+
+### Runtime-only Names
+
+- `st_asewkt`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_aswkb`: runtime alias of `ST_AsBinary`
+- `st_aswkt`: runtime alias of `ST_AsText`
+- `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
+- `st_geogtogeometry`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geometryfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromgeojson`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geomfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
+- `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+
+### Local-doc Names Not Exposed by This Package
+
+- `rs_bandnodatavalue`: omitted in this package because raster/GDAL is not enabled
+- `rs_bandpath`: omitted in this package because raster/GDAL is not enabled
+- `rs_bandpixeltype`: omitted in this package because raster/GDAL is not enabled
+- `rs_contains`: omitted in this package because raster/GDAL is not enabled
+- `rs_convexhull`: omitted in this package because raster/GDAL is not enabled
+- `rs_crs`: omitted in this package because raster/GDAL is not enabled
+- `rs_envelope`: omitted in this package because raster/GDAL is not enabled
+- `rs_example`: omitted in this package because raster/GDAL is not enabled
+- `rs_georeference`: omitted in this package because raster/GDAL is not enabled
+- `rs_height`: omitted in this package because raster/GDAL is not enabled
+- `rs_intersects`: omitted in this package because raster/GDAL is not enabled
+- `rs_numbands`: omitted in this package because raster/GDAL is not enabled
+- `rs_pixelascentroid`: omitted in this package because raster/GDAL is not enabled
+- `rs_pixelaspoint`: omitted in this package because raster/GDAL is not enabled
+- `rs_pixelaspolygon`: omitted in this package because raster/GDAL is not enabled
+- `rs_rastertoworldcoord`: omitted in this package because raster/GDAL is not enabled
+- `rs_rastertoworldcoordx`: omitted in this package because raster/GDAL is not enabled
+- `rs_rastertoworldcoordy`: omitted in this package because raster/GDAL is not enabled
+- `rs_rotation`: omitted in this package because raster/GDAL is not enabled
+- `rs_scalex`: omitted in this package because raster/GDAL is not enabled
+- `rs_scaley`: omitted in this package because raster/GDAL is not enabled
+- `rs_setcrs`: omitted in this package because raster/GDAL is not enabled
+- `rs_setsrid`: omitted in this package because raster/GDAL is not enabled
+- `rs_skewx`: omitted in this package because raster/GDAL is not enabled
+- `rs_skewy`: omitted in this package because raster/GDAL is not enabled
+- `rs_srid`: omitted in this package because raster/GDAL is not enabled
+- `rs_upperleftx`: omitted in this package because raster/GDAL is not enabled
+- `rs_upperlefty`: omitted in this package because raster/GDAL is not enabled
+- `rs_width`: omitted in this package because raster/GDAL is not enabled
+- `rs_within`: omitted in this package because raster/GDAL is not enabled
+- `rs_worldtorastercoord`: omitted in this package because raster/GDAL is not enabled
+- `rs_worldtorastercoordx`: omitted in this package because raster/GDAL is not enabled
+- `rs_worldtorastercoordy`: omitted in this package because raster/GDAL is not enabled
+- `st_transform`: omitted in this package because PROJ is not enabled
+
+### Full Runtime Catalog
+
+- `st_affine`
+- `st_analyze_agg`
+- `st_area`
+- `st_asbinary`
+- `st_asewkb`
+- `st_asewkt`
+- `st_asgeojson`
+- `st_astext`
+- `st_aswkb`
+- `st_aswkt`
+- `st_azimuth`
+- `st_boundary`
+- `st_buffer`
+- `st_centroid`
+- `st_closestpoint`
+- `st_collect_agg`
+- `st_concavehull`
+- `st_contains`
+- `st_convexhull`
+- `st_coveredby`
+- `st_covers`
+- `st_crosses`
+- `st_crs`
+- `st_difference`
+- `st_dimension`
+- `st_disjoint`
+- `st_distance`
+- `st_dump`
+- `st_dwithin`
+- `st_endpoint`
+- `st_envelope`
+- `st_envelope_agg`
+- `st_equals`
+- `st_expand`
+- `st_exteriorring`
+- `st_flipcoordinates`
+- `st_force2d`
+- `st_force3d`
+- `st_force3dm`
+- `st_force4d`
+- `st_geogfromewkb`
+- `st_geogfromewkt`
+- `st_geogfromtext`
+- `st_geogfromwkb`
+- `st_geogfromwkt`
+- `st_geogpoint`
+- `st_geogtogeometry`
+- `st_geometryfromtext`
+- `st_geometryn`
+- `st_geometrytype`
+- `st_geomfromewkb`
+- `st_geomfromewkt`
+- `st_geomfromgeojson`
+- `st_geomfromtext`
+- `st_geomfromwkb`
+- `st_geomfromwkbunchecked`
+- `st_geomfromwkt`
+- `st_geomtogeography`
+- `st_hasm`
+- `st_hasz`
+- `st_interiorringn`
+- `st_intersection`
+- `st_intersection_agg`
+- `st_intersects`
+- `st_isclosed`
+- `st_iscollection`
+- `st_isempty`
+- `st_isring`
+- `st_issimple`
+- `st_isvalid`
+- `st_isvalidreason`
+- `st_knn`
+- `st_length`
+- `st_lineinterpolatepoint`
+- `st_linelocatepoint`
+- `st_linemerge`
+- `st_m`
+- `st_makeenvelope`
+- `st_makeline`
+- `st_makevalid`
+- `st_maxdistance`
+- `st_minimumclearance`
+- `st_minimumclearanceline`
+- `st_mmax`
+- `st_mmin`
+- `st_npoints`
+- `st_nrings`
+- `st_numgeometries`
+- `st_numinteriorrings`
+- `st_numpoints`
+- `st_overlaps`
+- `st_perimeter`
+- `st_point`
+- `st_pointm`
+- `st_pointn`
+- `st_points`
+- `st_pointz`
+- `st_pointzm`
+- `st_polygonize`
+- `st_polygonize_agg`
+- `st_relate`
+- `st_reverse`
+- `st_rotate`
+- `st_rotatex`
+- `st_rotatey`
+- `st_scale`
+- `st_setcrs`
+- `st_setsrid`
+- `st_simplify`
+- `st_simplifypreservetopology`
+- `st_snap`
+- `st_srid`
+- `st_startpoint`
+- `st_symdifference`
+- `st_touches`
+- `st_translate`
+- `st_unaryunion`
+- `st_union`
+- `st_union_agg`
+- `st_within`
+- `st_x`
+- `st_xmax`
+- `st_xmin`
+- `st_y`
+- `st_ymax`
+- `st_ymin`
+- `st_z`
+- `st_zmax`
+- `st_zmflag`
+- `st_zmin`
+
+## Package: `geos-proj`
+
+- Runtime `ST_*` names: 131
+- Runtime `RS_*` names: 0
+
+### Runtime-only Names
+
+- `st_asewkt`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_aswkb`: runtime alias of `ST_AsBinary`
+- `st_aswkt`: runtime alias of `ST_AsText`
+- `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
+- `st_geogtogeometry`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geometryfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromgeojson`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geomfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
+- `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+
+### Local-doc Names Not Exposed by This Package
+
+- `rs_bandnodatavalue`: omitted in this package because raster/GDAL is not enabled
+- `rs_bandpath`: omitted in this package because raster/GDAL is not enabled
+- `rs_bandpixeltype`: omitted in this package because raster/GDAL is not enabled
+- `rs_contains`: omitted in this package because raster/GDAL is not enabled
+- `rs_convexhull`: omitted in this package because raster/GDAL is not enabled
+- `rs_crs`: omitted in this package because raster/GDAL is not enabled
+- `rs_envelope`: omitted in this package because raster/GDAL is not enabled
+- `rs_example`: omitted in this package because raster/GDAL is not enabled
+- `rs_georeference`: omitted in this package because raster/GDAL is not enabled
+- `rs_height`: omitted in this package because raster/GDAL is not enabled
+- `rs_intersects`: omitted in this package because raster/GDAL is not enabled
+- `rs_numbands`: omitted in this package because raster/GDAL is not enabled
+- `rs_pixelascentroid`: omitted in this package because raster/GDAL is not enabled
+- `rs_pixelaspoint`: omitted in this package because raster/GDAL is not enabled
+- `rs_pixelaspolygon`: omitted in this package because raster/GDAL is not enabled
+- `rs_rastertoworldcoord`: omitted in this package because raster/GDAL is not enabled
+- `rs_rastertoworldcoordx`: omitted in this package because raster/GDAL is not enabled
+- `rs_rastertoworldcoordy`: omitted in this package because raster/GDAL is not enabled
+- `rs_rotation`: omitted in this package because raster/GDAL is not enabled
+- `rs_scalex`: omitted in this package because raster/GDAL is not enabled
+- `rs_scaley`: omitted in this package because raster/GDAL is not enabled
+- `rs_setcrs`: omitted in this package because raster/GDAL is not enabled
+- `rs_setsrid`: omitted in this package because raster/GDAL is not enabled
+- `rs_skewx`: omitted in this package because raster/GDAL is not enabled
+- `rs_skewy`: omitted in this package because raster/GDAL is not enabled
+- `rs_srid`: omitted in this package because raster/GDAL is not enabled
+- `rs_upperleftx`: omitted in this package because raster/GDAL is not enabled
+- `rs_upperlefty`: omitted in this package because raster/GDAL is not enabled
+- `rs_width`: omitted in this package because raster/GDAL is not enabled
+- `rs_within`: omitted in this package because raster/GDAL is not enabled
+- `rs_worldtorastercoord`: omitted in this package because raster/GDAL is not enabled
+- `rs_worldtorastercoordx`: omitted in this package because raster/GDAL is not enabled
+- `rs_worldtorastercoordy`: omitted in this package because raster/GDAL is not enabled
+
+### Full Runtime Catalog
+
+- `st_affine`
+- `st_analyze_agg`
+- `st_area`
+- `st_asbinary`
+- `st_asewkb`
+- `st_asewkt`
+- `st_asgeojson`
+- `st_astext`
+- `st_aswkb`
+- `st_aswkt`
+- `st_azimuth`
+- `st_boundary`
+- `st_buffer`
+- `st_centroid`
+- `st_closestpoint`
+- `st_collect_agg`
+- `st_concavehull`
+- `st_contains`
+- `st_convexhull`
+- `st_coveredby`
+- `st_covers`
+- `st_crosses`
+- `st_crs`
+- `st_difference`
+- `st_dimension`
+- `st_disjoint`
+- `st_distance`
+- `st_dump`
+- `st_dwithin`
+- `st_endpoint`
+- `st_envelope`
+- `st_envelope_agg`
+- `st_equals`
+- `st_expand`
+- `st_exteriorring`
+- `st_flipcoordinates`
+- `st_force2d`
+- `st_force3d`
+- `st_force3dm`
+- `st_force4d`
+- `st_geogfromewkb`
+- `st_geogfromewkt`
+- `st_geogfromtext`
+- `st_geogfromwkb`
+- `st_geogfromwkt`
+- `st_geogpoint`
+- `st_geogtogeometry`
+- `st_geometryfromtext`
+- `st_geometryn`
+- `st_geometrytype`
+- `st_geomfromewkb`
+- `st_geomfromewkt`
+- `st_geomfromgeojson`
+- `st_geomfromtext`
+- `st_geomfromwkb`
+- `st_geomfromwkbunchecked`
+- `st_geomfromwkt`
+- `st_geomtogeography`
+- `st_hasm`
+- `st_hasz`
+- `st_interiorringn`
+- `st_intersection`
+- `st_intersection_agg`
+- `st_intersects`
+- `st_isclosed`
+- `st_iscollection`
+- `st_isempty`
+- `st_isring`
+- `st_issimple`
+- `st_isvalid`
+- `st_isvalidreason`
+- `st_knn`
+- `st_length`
+- `st_lineinterpolatepoint`
+- `st_linelocatepoint`
+- `st_linemerge`
+- `st_m`
+- `st_makeenvelope`
+- `st_makeline`
+- `st_makevalid`
+- `st_maxdistance`
+- `st_minimumclearance`
+- `st_minimumclearanceline`
+- `st_mmax`
+- `st_mmin`
+- `st_npoints`
+- `st_nrings`
+- `st_numgeometries`
+- `st_numinteriorrings`
+- `st_numpoints`
+- `st_overlaps`
+- `st_perimeter`
+- `st_point`
+- `st_pointm`
+- `st_pointn`
+- `st_points`
+- `st_pointz`
+- `st_pointzm`
+- `st_polygonize`
+- `st_polygonize_agg`
+- `st_relate`
+- `st_reverse`
+- `st_rotate`
+- `st_rotatex`
+- `st_rotatey`
+- `st_scale`
+- `st_setcrs`
+- `st_setsrid`
+- `st_simplify`
+- `st_simplifypreservetopology`
+- `st_snap`
+- `st_srid`
+- `st_startpoint`
+- `st_symdifference`
+- `st_touches`
+- `st_transform`
+- `st_translate`
+- `st_unaryunion`
+- `st_union`
+- `st_union_agg`
+- `st_within`
+- `st_x`
+- `st_xmax`
+- `st_xmin`
+- `st_y`
+- `st_ymax`
+- `st_ymin`
+- `st_z`
+- `st_zmax`
+- `st_zmflag`
+- `st_zmin`
+
+## Package: `geos-proj-s2`
+
+- Runtime `ST_*` names: 132
+- Runtime `RS_*` names: 0
+
+### Runtime-only Names
+
+- `st_asewkt`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_aswkb`: runtime alias of `ST_AsBinary`
+- `st_aswkt`: runtime alias of `ST_AsText`
+- `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
+- `st_geogtogeometry`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geometryfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromgeojson`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geomfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
+- `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_shortestline`
+
+### Local-doc Names Not Exposed by This Package
+
+- `rs_bandnodatavalue`: omitted in this package because raster/GDAL is not enabled
+- `rs_bandpath`: omitted in this package because raster/GDAL is not enabled
+- `rs_bandpixeltype`: omitted in this package because raster/GDAL is not enabled
+- `rs_contains`: omitted in this package because raster/GDAL is not enabled
+- `rs_convexhull`: omitted in this package because raster/GDAL is not enabled
+- `rs_crs`: omitted in this package because raster/GDAL is not enabled
+- `rs_envelope`: omitted in this package because raster/GDAL is not enabled
+- `rs_example`: omitted in this package because raster/GDAL is not enabled
+- `rs_georeference`: omitted in this package because raster/GDAL is not enabled
+- `rs_height`: omitted in this package because raster/GDAL is not enabled
+- `rs_intersects`: omitted in this package because raster/GDAL is not enabled
+- `rs_numbands`: omitted in this package because raster/GDAL is not enabled
+- `rs_pixelascentroid`: omitted in this package because raster/GDAL is not enabled
+- `rs_pixelaspoint`: omitted in this package because raster/GDAL is not enabled
+- `rs_pixelaspolygon`: omitted in this package because raster/GDAL is not enabled
+- `rs_rastertoworldcoord`: omitted in this package because raster/GDAL is not enabled
+- `rs_rastertoworldcoordx`: omitted in this package because raster/GDAL is not enabled
+- `rs_rastertoworldcoordy`: omitted in this package because raster/GDAL is not enabled
+- `rs_rotation`: omitted in this package because raster/GDAL is not enabled
+- `rs_scalex`: omitted in this package because raster/GDAL is not enabled
+- `rs_scaley`: omitted in this package because raster/GDAL is not enabled
+- `rs_setcrs`: omitted in this package because raster/GDAL is not enabled
+- `rs_setsrid`: omitted in this package because raster/GDAL is not enabled
+- `rs_skewx`: omitted in this package because raster/GDAL is not enabled
+- `rs_skewy`: omitted in this package because raster/GDAL is not enabled
+- `rs_srid`: omitted in this package because raster/GDAL is not enabled
+- `rs_upperleftx`: omitted in this package because raster/GDAL is not enabled
+- `rs_upperlefty`: omitted in this package because raster/GDAL is not enabled
+- `rs_width`: omitted in this package because raster/GDAL is not enabled
+- `rs_within`: omitted in this package because raster/GDAL is not enabled
+- `rs_worldtorastercoord`: omitted in this package because raster/GDAL is not enabled
+- `rs_worldtorastercoordx`: omitted in this package because raster/GDAL is not enabled
+- `rs_worldtorastercoordy`: omitted in this package because raster/GDAL is not enabled
+
+### Full Runtime Catalog
+
+- `st_affine`
+- `st_analyze_agg`
+- `st_area`
+- `st_asbinary`
+- `st_asewkb`
+- `st_asewkt`
+- `st_asgeojson`
+- `st_astext`
+- `st_aswkb`
+- `st_aswkt`
+- `st_azimuth`
+- `st_boundary`
+- `st_buffer`
+- `st_centroid`
+- `st_closestpoint`
+- `st_collect_agg`
+- `st_concavehull`
+- `st_contains`
+- `st_convexhull`
+- `st_coveredby`
+- `st_covers`
+- `st_crosses`
+- `st_crs`
+- `st_difference`
+- `st_dimension`
+- `st_disjoint`
+- `st_distance`
+- `st_dump`
+- `st_dwithin`
+- `st_endpoint`
+- `st_envelope`
+- `st_envelope_agg`
+- `st_equals`
+- `st_expand`
+- `st_exteriorring`
+- `st_flipcoordinates`
+- `st_force2d`
+- `st_force3d`
+- `st_force3dm`
+- `st_force4d`
+- `st_geogfromewkb`
+- `st_geogfromewkt`
+- `st_geogfromtext`
+- `st_geogfromwkb`
+- `st_geogfromwkt`
+- `st_geogpoint`
+- `st_geogtogeometry`
+- `st_geometryfromtext`
+- `st_geometryn`
+- `st_geometrytype`
+- `st_geomfromewkb`
+- `st_geomfromewkt`
+- `st_geomfromgeojson`
+- `st_geomfromtext`
+- `st_geomfromwkb`
+- `st_geomfromwkbunchecked`
+- `st_geomfromwkt`
+- `st_geomtogeography`
+- `st_hasm`
+- `st_hasz`
+- `st_interiorringn`
+- `st_intersection`
+- `st_intersection_agg`
+- `st_intersects`
+- `st_isclosed`
+- `st_iscollection`
+- `st_isempty`
+- `st_isring`
+- `st_issimple`
+- `st_isvalid`
+- `st_isvalidreason`
+- `st_knn`
+- `st_length`
+- `st_lineinterpolatepoint`
+- `st_linelocatepoint`
+- `st_linemerge`
+- `st_m`
+- `st_makeenvelope`
+- `st_makeline`
+- `st_makevalid`
+- `st_maxdistance`
+- `st_minimumclearance`
+- `st_minimumclearanceline`
+- `st_mmax`
+- `st_mmin`
+- `st_npoints`
+- `st_nrings`
+- `st_numgeometries`
+- `st_numinteriorrings`
+- `st_numpoints`
+- `st_overlaps`
+- `st_perimeter`
+- `st_point`
+- `st_pointm`
+- `st_pointn`
+- `st_points`
+- `st_pointz`
+- `st_pointzm`
+- `st_polygonize`
+- `st_polygonize_agg`
+- `st_relate`
+- `st_reverse`
+- `st_rotate`
+- `st_rotatex`
+- `st_rotatey`
+- `st_scale`
+- `st_setcrs`
+- `st_setsrid`
+- `st_shortestline`
+- `st_simplify`
+- `st_simplifypreservetopology`
+- `st_snap`
+- `st_srid`
+- `st_startpoint`
+- `st_symdifference`
+- `st_touches`
+- `st_transform`
+- `st_translate`
+- `st_unaryunion`
+- `st_union`
+- `st_union_agg`
+- `st_within`
+- `st_x`
+- `st_xmax`
+- `st_xmin`
+- `st_y`
+- `st_ymax`
+- `st_ymin`
+- `st_z`
+- `st_zmax`
+- `st_zmflag`
+- `st_zmin`
+
+## Package: `full`
+
+- Runtime `ST_*` names: 132
+- Runtime `RS_*` names: 33
+
+### Runtime-only Names
+
+- `st_asewkt`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_aswkb`: runtime alias of `ST_AsBinary`
+- `st_aswkt`: runtime alias of `ST_AsText`
+- `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
+- `st_geogtogeometry`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_geometryfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromgeojson`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_geomfromtext`: runtime compatibility alias for text geometry parsing
+- `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
+- `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
+- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_shortestline`
+
+### Local-doc Names Not Exposed by This Package
+
+none
+
+### Full Runtime Catalog
+
+- `rs_bandnodatavalue`
+- `rs_bandpath`
+- `rs_bandpixeltype`
+- `rs_contains`
+- `rs_convexhull`
+- `rs_crs`
+- `rs_envelope`
+- `rs_example`
+- `rs_georeference`
+- `rs_height`
+- `rs_intersects`
+- `rs_numbands`
+- `rs_pixelascentroid`
+- `rs_pixelaspoint`
+- `rs_pixelaspolygon`
+- `rs_rastertoworldcoord`
+- `rs_rastertoworldcoordx`
+- `rs_rastertoworldcoordy`
+- `rs_rotation`
+- `rs_scalex`
+- `rs_scaley`
+- `rs_setcrs`
+- `rs_setsrid`
+- `rs_skewx`
+- `rs_skewy`
+- `rs_srid`
+- `rs_upperleftx`
+- `rs_upperlefty`
+- `rs_width`
+- `rs_within`
+- `rs_worldtorastercoord`
+- `rs_worldtorastercoordx`
+- `rs_worldtorastercoordy`
+- `st_affine`
+- `st_analyze_agg`
+- `st_area`
+- `st_asbinary`
+- `st_asewkb`
+- `st_asewkt`
+- `st_asgeojson`
+- `st_astext`
+- `st_aswkb`
+- `st_aswkt`
+- `st_azimuth`
+- `st_boundary`
+- `st_buffer`
+- `st_centroid`
+- `st_closestpoint`
+- `st_collect_agg`
+- `st_concavehull`
+- `st_contains`
+- `st_convexhull`
+- `st_coveredby`
+- `st_covers`
+- `st_crosses`
+- `st_crs`
+- `st_difference`
+- `st_dimension`
+- `st_disjoint`
+- `st_distance`
+- `st_dump`
+- `st_dwithin`
+- `st_endpoint`
+- `st_envelope`
+- `st_envelope_agg`
+- `st_equals`
+- `st_expand`
+- `st_exteriorring`
+- `st_flipcoordinates`
+- `st_force2d`
+- `st_force3d`
+- `st_force3dm`
+- `st_force4d`
+- `st_geogfromewkb`
+- `st_geogfromewkt`
+- `st_geogfromtext`
+- `st_geogfromwkb`
+- `st_geogfromwkt`
+- `st_geogpoint`
+- `st_geogtogeometry`
+- `st_geometryfromtext`
+- `st_geometryn`
+- `st_geometrytype`
+- `st_geomfromewkb`
+- `st_geomfromewkt`
+- `st_geomfromgeojson`
+- `st_geomfromtext`
+- `st_geomfromwkb`
+- `st_geomfromwkbunchecked`
+- `st_geomfromwkt`
+- `st_geomtogeography`
+- `st_hasm`
+- `st_hasz`
+- `st_interiorringn`
+- `st_intersection`
+- `st_intersection_agg`
+- `st_intersects`
+- `st_isclosed`
+- `st_iscollection`
+- `st_isempty`
+- `st_isring`
+- `st_issimple`
+- `st_isvalid`
+- `st_isvalidreason`
+- `st_knn`
+- `st_length`
+- `st_lineinterpolatepoint`
+- `st_linelocatepoint`
+- `st_linemerge`
+- `st_m`
+- `st_makeenvelope`
+- `st_makeline`
+- `st_makevalid`
+- `st_maxdistance`
+- `st_minimumclearance`
+- `st_minimumclearanceline`
+- `st_mmax`
+- `st_mmin`
+- `st_npoints`
+- `st_nrings`
+- `st_numgeometries`
+- `st_numinteriorrings`
+- `st_numpoints`
+- `st_overlaps`
+- `st_perimeter`
+- `st_point`
+- `st_pointm`
+- `st_pointn`
+- `st_points`
+- `st_pointz`
+- `st_pointzm`
+- `st_polygonize`
+- `st_polygonize_agg`
+- `st_relate`
+- `st_reverse`
+- `st_rotate`
+- `st_rotatex`
+- `st_rotatey`
+- `st_scale`
+- `st_setcrs`
+- `st_setsrid`
+- `st_shortestline`
+- `st_simplify`
+- `st_simplifypreservetopology`
+- `st_snap`
+- `st_srid`
+- `st_startpoint`
+- `st_symdifference`
+- `st_touches`
+- `st_transform`
+- `st_translate`
+- `st_unaryunion`
+- `st_union`
+- `st_union_agg`
+- `st_within`
+- `st_x`
+- `st_xmax`
+- `st_xmin`
+- `st_y`
+- `st_ymax`
+- `st_ymin`
+- `st_z`
+- `st_zmax`
+- `st_zmflag`
+- `st_zmin`
+

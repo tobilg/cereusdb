@@ -89,6 +89,9 @@ jobs:
           name: wasm-artifacts
           path: dist
 
+      - name: Recreate pkg symlink for selected package
+        run: ln -sfn dist/${{ matrix.package }} pkg
+
       - name: Install JS dependencies
         run: cd js && npm ci
 

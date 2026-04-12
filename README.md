@@ -1,6 +1,8 @@
 # CereusDB
 
-A custom WebAssembly (Wasm) build of [Apache SedonaDB](https://github.com/apache/sedona-db) for browser-side spatial SQL. Named for the desert cactus genus Cereus (/ˈsɪəriəs/ — "serious"), a nod to its Sedona roots.
+A custom WebAssembly (Wasm) build of [Apache SedonaDB](https://github.com/apache/sedona-db) for browser-side spatial SQL. 
+
+Named for the desert cactus genus Cereus (/ˈsɪəriəs/ — "serious"), a nod to its Sedona roots.
 
 ## Overview
 
@@ -14,6 +16,14 @@ The public WASM packages now enable SedonaDB's spatial join planner path,
 including relation joins, distance joins, and `ST_KNN`, in a constrained
 browser MVP: single-partition, in-memory, sequential refinement, with no
 spill-to-disk or out-of-core execution.
+
+## API Docs
+
+The TypeScript API docs can be found at [cereusdb-api.gh.tobilg.com](https://cereusdb-api.gh.tobilg.com).
+
+## Playground
+
+The interactive Playground fro CereusDB can be found at [cereusdb-playground.gh.tobilg.com](https://cereusdb-playground.gh.tobilg.com).
 
 ### Browser packages
 

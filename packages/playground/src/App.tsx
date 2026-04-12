@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CereusDB } from '@cereusdb/standard';
+import { CereusDB } from '@cereusdb/minimal';
 import {
   AlertCircle,
   CheckCircle2,
@@ -42,9 +42,7 @@ type StatusKind = 'loading' | 'ready' | 'error';
 type Status = { kind: StatusKind; message: string };
 
 const DEFAULT_QUERY = `SELECT
-  ST_AsText(
-    ST_Transform(ST_GeomFromWKT('POINT(13.4 52.5)'), 'EPSG:4326', 'EPSG:3857')
-  ) AS projected_geom,
+  ST_AsText(ST_Buffer(ST_Point(0, 0), 1.0)) AS buffered,
   ST_Distance(ST_Point(0, 0), ST_Point(3, 4)) AS distance`;
 
 const PRESETS: Array<{ label: string; query: string }> = [
@@ -66,11 +64,6 @@ const PRESETS: Array<{ label: string; query: string }> = [
   {
     label: 'ST_Buffer',
     query: 'SELECT ST_AsText(ST_Buffer(ST_Point(0,0), 1.0)) AS buffered',
-  },
-  {
-    label: 'ST_Transform',
-    query:
-      "SELECT ST_AsText(ST_Transform(ST_GeomFromWKT('POINT(13.4 52.5)'), 'EPSG:4326', 'EPSG:3857')) AS projected_geom",
   },
   {
     label: 'ST_Intersects',
@@ -265,7 +258,7 @@ export default function App(): React.ReactElement {
               <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
                 cereus / playground
               </span>
-              <span className="font-semibold tracking-tight">CereusDB Standard</span>
+              <span className="font-semibold tracking-tight">CereusDB Minimal</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -287,7 +280,7 @@ export default function App(): React.ReactElement {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
               <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
             </span>
-            @cereusdb/standard
+            @cereusdb/minimal
           </span>
           <h1 className="text-4xl font-semibold leading-[1.02] tracking-tight sm:text-5xl md:text-[3.75rem]">
             Query{' '}
@@ -297,7 +290,7 @@ export default function App(): React.ReactElement {
             , in the browser.
           </h1>
           <p className="mt-6 text-base leading-relaxed text-muted-foreground sm:text-lg">
-            Core spatial SQL, GEOS, PROJ, relation joins, distance joins, and{' '}
+            Core spatial SQL, GEOS, relation joins, distance joins, and{' '}
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.9em] text-foreground">
               ST_KNN
             </code>{' '}
@@ -551,7 +544,7 @@ export default function App(): React.ReactElement {
 
         <footer className="mt-16 flex flex-col items-start justify-between gap-2 border-t border-border/60 pt-6 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground sm:flex-row sm:items-center">
           <span>cereus / playground</span>
-          <span>built on @cereusdb/standard</span>
+          <span>built on @cereusdb/minimal</span>
         </footer>
       </main>
     </div>
@@ -567,7 +560,7 @@ function AmbientBackdrop() {
         className="absolute inset-0 opacity-[0.045]"
         style={{
           backgroundImage:
-            'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.95) 1px, transparent 0)',
+            'radial-gradient(circle at 1px 1px, rgba(0,0,0,0.15) 1px, transparent 0)',
           backgroundSize: '30px 30px',
         }}
       />
@@ -585,7 +578,7 @@ function AmbientBackdrop() {
 function Mark() {
   return (
     <div className="relative flex size-10 items-center justify-center">
-      <div className="absolute inset-0 rounded-md border border-border bg-card/80 shadow-[0_10px_30px_-10px_oklch(0.74_0.16_55/0.35)]" />
+      <div className="absolute inset-0 rounded-md border border-border bg-card/80 shadow-[0_10px_30px_-10px_oklch(0.60_0.15_52/0.35)]" />
       <svg
         viewBox="0 0 24 24"
         fill="none"
@@ -611,15 +604,15 @@ function StatusPill({ status }: { status: Status }) {
   > = {
     loading: {
       icon: <Loader2 className="size-3.5 animate-spin" />,
-      classes: 'text-amber-300 border-amber-300/30 bg-amber-300/10',
+      classes: 'text-amber-700 border-amber-600/30 bg-amber-500/10',
     },
     ready: {
       icon: <CheckCircle2 className="size-3.5" />,
-      classes: 'text-emerald-300 border-emerald-300/30 bg-emerald-300/10',
+      classes: 'text-emerald-700 border-emerald-600/30 bg-emerald-500/10',
     },
     error: {
       icon: <AlertCircle className="size-3.5" />,
-      classes: 'text-red-300 border-red-300/30 bg-red-300/10',
+      classes: 'text-red-700 border-red-600/30 bg-red-500/10',
     },
   };
   const cfg = config[status.kind];

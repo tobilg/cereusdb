@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check-deps": "test -f ../standard/dist/index.js || (echo 'Error: @cereusdb/standard has not been built yet.' && echo 'Run the following from the repo root first:' && echo '' && echo '  make package-standard' && exit 1)",
+    "check-deps": "test -f ../minimal/dist/index.js || (echo 'Error: @cereusdb/minimal has not been built yet.' && echo 'Run the following from the repo root first:' && echo '' && echo '  make package-minimal' && exit 1)",
     "predev": "npm run check-deps",
     "dev": "vite",
     "prebuild": "npm run check-deps",
@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^24.12.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

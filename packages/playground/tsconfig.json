@@ -17,7 +17,7 @@
     "noEmit": true,
     "allowSyntheticDefaultImports": true,
     "paths": {
-      "@cereusdb/standard": ["../standard/dist/index.d.ts"],
+      "@cereusdb/minimal": ["../minimal/dist/index.d.ts"],
       "@/*": ["./src/*"]
     }
   },

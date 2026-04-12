@@ -10,7 +10,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      '@cereusdb/standard': resolve(__dirname, '../standard/dist/index.js'),
+      '@cereusdb/minimal': resolve(__dirname, '../minimal/dist/index.js'),
       '@': resolve(__dirname, './src'),
     },
   },
@@ -29,6 +29,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ['@cereusdb/standard'],
+    exclude: ['@cereusdb/minimal'],
   },
 });

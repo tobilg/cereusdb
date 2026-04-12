@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "cd ../.. && make build-minimal && cd js && npm exec tsc && cd ../packages/documentation && typedoc",
+    "build": "cd ../.. && cd js && npm exec tsc && cd ../packages/documentation && typedoc",
     "build:typedoc": "typedoc",
     "build:release": "typedoc",
     "preview": "npx serve dist",

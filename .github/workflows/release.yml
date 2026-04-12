@@ -247,7 +247,7 @@ jobs:
           path: dist
 
       - name: Recreate pkg symlink for playground build
-        run: ln -sfn dist/standard pkg
+        run: ln -sfn dist/minimal pkg
 
       - name: Install JS dependencies
         run: cd js && npm ci
@@ -255,8 +255,8 @@ jobs:
       - name: Build shared TypeScript declarations
         run: cd js && npm exec tsc
 
-      - name: Build standard package shell
-        run: node scripts/build-npm-package.mjs standard
+      - name: Build minimal package shell
+        run: node scripts/build-npm-package.mjs minimal
 
       - name: Install playground dependencies
         run: cd packages/playground && npm ci

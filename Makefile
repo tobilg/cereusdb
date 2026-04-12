@@ -143,7 +143,7 @@ build-js: build-minimal build-ts
 build-ts: install-js-deps
 	cd js && npm exec tsc
 
-build-playground: package-standard
+build-playground: package-minimal
 	cd packages/playground && npm run build
 
 package-minimal: build-minimal build-ts

@@ -2,7 +2,7 @@
 
 A custom WebAssembly (Wasm) build of [Apache SedonaDB](https://github.com/apache/sedona-db) for browser-side spatial SQL. 
 
-Named for the desert cactus genus Cereus (/ˈsɪəriəs/ — "serious"), a nod to its Sedona roots.
+> Named for the desert cactus genus Cereus (/ˈsɪəriəs/ — "serious"), a nod to its Sedona roots.
 
 ## Overview
 
@@ -27,12 +27,12 @@ The interactive Playground fro CereusDB can be found at [cereusdb-playground.gh.
 
 ### Browser packages
 
-| Build | Features | Raw size | Gzipped |
-|---|---|---|---|
-| `minimal` | Core + `geo` + GEOS + spatial joins / `ST_KNN` MVP | 21 MB | 6.2 MB |
-| `standard` | `minimal` + PROJ / `ST_Transform` | 41 MB | 10.9 MB |
-| `global` | `standard` + opt-in S2 geography kernels | 43 MB | 12.0 MB |
-| `full` | `global` + GDAL-backed raster ingestion and the full current local `RS_*` catalog | 50 MB | 14.5 MB |
+| Build | Features | Raw size | Gzipped | Brotli |
+|---|---|---|---|---|
+| `minimal` | Core + `geo` + GEOS + spatial joins / `ST_KNN` MVP | 21.3 MB | 6.2 MB | 4.0 MB |
+| `standard` | `minimal` + PROJ / `ST_Transform` | 40.6 MB | 10.8 MB | 6.0 MB |
+| `global` | `standard` + opt-in S2 geography kernels | 42.9 MB | 11.8 MB | 6.7 MB |
+| `full` | `global` + GDAL-backed raster ingestion and the full current local `RS_*` catalog | 49.5 MB | 14.4 MB | 8.5 MB |
 
 `full` is the maximum browser build target. It now combines GEOS, PROJ, S2, and GDAL. It adds browser-side GeoTIFF/TIFF upload plus the full current SedonaDB/Rust raster SQL surface (`33` `RS_*` functions), including `RS_Contains`, `RS_Intersects`, and `RS_Within`. Raster ingestion remains host-driven through `registerGeoTIFF()` / `registerRaster()`. SQL-side raster loader functions are not exposed in the browser WASM build.
 
@@ -46,15 +46,15 @@ Each public browser artifact is published as its own npm package:
 
 | Package | Build |
 |---|---|
-| `@cereusdb/minimal` | `minimal` |
-| `@cereusdb/standard` | `standard` |
-| `@cereusdb/global` | `global` |
-| `@cereusdb/full` | `full` |
+| [`@cereusdb/minimal`](https://www.npmjs.com/package/@cereusdb/minimal) | `minimal` |
+| [`@cereusdb/standard`](https://www.npmjs.com/package/@cereusdb/standard) | `standard` |
+| [`@cereusdb/global`](https://www.npmjs.com/package/@cereusdb/global) | `global` |
+| [`@cereusdb/full`](https://www.npmjs.com/package/@cereusdb/full) | `full` |
 
 The repository also contains two private Pages-deployed apps under `packages/`:
 
 - `packages/documentation` for the Typedoc site
-- `packages/playground` for the interactive browser playground built on `@cereusdb/standard`
+- `packages/playground` for the interactive browser playground built on `@cereusdb/minimal`
 
 ### Spatial join MVP limits
 
@@ -446,7 +446,7 @@ make serve
 # Open http://127.0.0.1:8080
 ```
 
-The Vite playground in `packages/playground` replaces the old static HTML demos. It uses `@cereusdb/standard`, supports ad hoc SQL queries, remote Parquet loading, local Parquet/GeoJSON uploads, and result inspection in both table and JSON form.
+The Vite playground in `packages/playground` replaces the old static HTML demos. It uses `@cereusdb/minimal`, supports ad hoc SQL queries, remote Parquet loading, local Parquet/GeoJSON uploads, and result inspection in both table and JSON form.
 
 ### JavaScript tests
 
@@ -501,7 +501,7 @@ CereusDB/
 ├── dist/                   # Package outputs (minimal, standard, global, full)
 ├── packages/               # npm package shells and private Pages apps
 │   ├── documentation/      # Typedoc site source and deployment config
-│   ├── playground/         # Browser playground built on @cereusdb/standard
+│   ├── playground/         # Browser playground built on @cereusdb/minimal
 │   └── <package>/          # @cereusdb/minimal|standard|global|full shells
 ├── pkg -> dist/<package>   # Symlink to the most recently built package
 ├── js/

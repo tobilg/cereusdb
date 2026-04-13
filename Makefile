@@ -4,6 +4,7 @@
 	build-sqlite-lib build-geos-lib build-proj-lib build-gdal-deps-lib build-gdal-lib \
 	s2-vcpkg-bootstrap s2-vcpkg-install s2-spike-vcpkg \
 	build-js build-ts build-playground package-minimal package-standard package-global package-full package-all sync-versions \
+	smoke-package-minimal smoke-package-standard smoke-package-global smoke-package-full smoke-package-all \
 	test-js test-js-minimal test-js-standard test-js-global test-js-full test-js-geos test-js-geos-proj test-js-geos-proj-s2 \
 	patch-wasm-js optimize-wasm size-minimal size-standard size-global size-full size-report surface-report size-geos size-geos-proj size-geos-proj-s2 \
 	clean clean-all serve
@@ -28,6 +29,11 @@ help:
 		'make package-global     Assemble the @cereusdb/global npm package' \
 		'make package-full       Assemble the @cereusdb/full npm package' \
 		'make package-all        Assemble all public npm packages' \
+		'make smoke-package-minimal Validate the packed @cereusdb/minimal tarball can initialize' \
+		'make smoke-package-standard Validate the packed @cereusdb/standard tarball can initialize' \
+		'make smoke-package-global Validate the packed @cereusdb/global tarball can initialize' \
+		'make smoke-package-full Validate the packed @cereusdb/full tarball can initialize' \
+		'make smoke-package-all  Validate packed tarballs for all public npm packages' \
 		'make sync-versions      Sync package versions from Cargo.toml' \
 		'make test-js            Build the full browser package and run the Vitest suite' \
 		'make test-js-minimal    Build the minimal package and run the Vitest suite' \
@@ -159,6 +165,21 @@ package-full: build-full build-ts
 	node scripts/build-npm-package.mjs full
 
 package-all: package-minimal package-standard package-global package-full
+
+smoke-package-minimal: package-minimal
+	node scripts/smoke-packed-package.mjs minimal
+
+smoke-package-standard: package-standard
+	node scripts/smoke-packed-package.mjs standard
+
+smoke-package-global: package-global
+	node scripts/smoke-packed-package.mjs global
+
+smoke-package-full: package-full
+	node scripts/smoke-packed-package.mjs full
+
+smoke-package-all: package-all
+	node scripts/smoke-packed-package.mjs all
 
 sync-versions:
 	node scripts/sync-package-versions.mjs

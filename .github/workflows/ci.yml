@@ -9,10 +9,35 @@ on:
 env:
   EMSDK_VERSION: '4.0.22'
   NODE_VERSION: '22'
+  WASM_PACK_VERSION: '0.14.0'
+  BINARYEN_VERSION: 'version_125'
+  BINARYEN_ARCHIVE: 'binaryen-version_125-x86_64-linux.tar.gz'
+  BINARYEN_SHA256: '7c3bc16599c8274a04d34a504fe4be2047884f900e0e2da2f6fb9cd667183be4'
 
 jobs:
+  build-scope:
+    runs-on: ubuntu-latest
+    outputs:
+      minimal_only: ${{ steps.scope.outputs.minimal_only }}
+      package_matrix: ${{ steps.scope.outputs.package_matrix }}
+
+    steps:
+      - name: Determine build scope
+        id: scope
+        run: |
+          BRANCH_NAME="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+
+          if [[ "$BRANCH_NAME" == feature/* ]]; then
+            echo "minimal_only=true" >> "$GITHUB_OUTPUT"
+            echo 'package_matrix=["minimal"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "minimal_only=false" >> "$GITHUB_OUTPUT"
+            echo 'package_matrix=["minimal","standard","global","full"]' >> "$GITHUB_OUTPUT"
+          fi
+
   build-wasm:
     runs-on: ubuntu-latest
+    needs: build-scope
     timeout-minutes: 180
 
     steps:
@@ -22,7 +47,7 @@ jobs:
           submodules: recursive
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.94.0
         with:
           targets: wasm32-unknown-unknown
 
@@ -35,24 +60,36 @@ jobs:
       - name: Verify toolchain
         run: emcc -v
 
-      - name: Install binaryen
-        run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: Install pinned Binaryen
+        run: |
+          mkdir -p "$RUNNER_TEMP/binaryen"
+          curl -L --fail --silent --show-error \
+            "https://github.com/WebAssembly/binaryen/releases/download/${{ env.BINARYEN_VERSION }}/${{ env.BINARYEN_ARCHIVE }}" \
+            -o "$RUNNER_TEMP/${{ env.BINARYEN_ARCHIVE }}"
+          echo "${{ env.BINARYEN_SHA256 }}  $RUNNER_TEMP/${{ env.BINARYEN_ARCHIVE }}" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/${{ env.BINARYEN_ARCHIVE }}" -C "$RUNNER_TEMP/binaryen" --strip-components=1
+          echo "$RUNNER_TEMP/binaryen/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/binaryen/bin/wasm-opt" --version
 
-      - name: Install wasm-pack
-        uses: jetli/wasm-pack-action@v0.4.0
+      - name: Install pinned wasm-pack
+        run: cargo install wasm-pack --locked --version ${{ env.WASM_PACK_VERSION }}
 
       - name: Checkout vcpkg for S2-enabled builds
         run: git clone --depth 1 https://github.com/microsoft/vcpkg.git deps/vcpkg
 
       - name: Build browser packages
         run: |
-          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-minimal
-          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-standard
-          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-global
-          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-full
+          if [ "${{ needs.build-scope.outputs.minimal_only }}" = "true" ]; then
+            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-minimal
+          else
+            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-minimal
+            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-standard
+            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-global
+            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-full
+          fi
 
       - name: Upload WASM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wasm-artifacts
           path: |
@@ -65,16 +102,18 @@ jobs:
 
   packages:
     runs-on: ubuntu-latest
-    needs: build-wasm
+    needs: [build-scope, build-wasm]
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        package: [minimal, standard, global, full]
+        package: ${{ fromJson(needs.build-scope.outputs.package_matrix) }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -84,7 +123,7 @@ jobs:
           cache-dependency-path: js/package-lock.json
 
       - name: Download WASM artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wasm-artifacts
           path: dist
@@ -104,5 +143,5 @@ jobs:
       - name: Build npm package shell
         run: node scripts/build-npm-package.mjs ${{ matrix.package }}
 
-      - name: Validate npm package tarball
-        run: cd packages/${{ matrix.package }} && npm pack --dry-run
+      - name: Smoke-test packed npm artifact
+        run: node scripts/smoke-packed-package.mjs ${{ matrix.package }}

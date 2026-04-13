@@ -1,6 +1,6 @@
 {
   "name": "@cereusdb/full",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Full CereusDB browser package with GEOS, PROJ, GDAL, and S2 geography support",
   "type": "module",
   "main": "./dist/index.js",

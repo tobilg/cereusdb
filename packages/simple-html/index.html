@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CereusDB Simple HTML Example</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 0 auto;
+      max-width: 48rem;
+      padding: 2rem 1.5rem 4rem;
+      line-height: 1.5;
+    }
+    h1 { margin-top: 0; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    pre {
+      background: #f5f5f5;
+      color: #111;
+      padding: 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    @media (prefers-color-scheme: dark) {
+      pre { background: #1e1e1e; color: #eee; }
+    }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>CereusDB Simple HTML Example</h1>
+  <p class="muted">
+    Loads <code>@cereusdb/minimal</code> directly in the browser from a plain
+    static HTML page (no bundler). Served by the <code>serve</code> npm package.
+  </p>
+  <pre id="log">Starting…</pre>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "@cereusdb/minimal": "./node_modules/@cereusdb/minimal/dist/index.js"
+      }
+    }
+  </script>
+  <script type="module">
+    import { CereusDB } from "@cereusdb/minimal";
+
+    const logEl = document.getElementById("log");
+    const log = (...args) => {
+      const line = args
+        .map((a) => (typeof a === "string" ? a : JSON.stringify(a, null, 2)))
+        .join(" ");
+      logEl.textContent += "\n" + line;
+      console.log(...args);
+    };
+
+    try {
+      logEl.textContent = "";
+      log("Loading CereusDB minimal…");
+      const db = await CereusDB.create();
+      log("Engine version:", db.version());
+
+      log("\nCreating table `cities`…");
+      await db.sql(`
+        CREATE TABLE cities AS
+        SELECT * FROM (VALUES
+          ('Berlin',   52.5200,  13.4050),
+          ('Paris',    48.8566,   2.3522),
+          ('Tokyo',    35.6762, 139.6503),
+          ('New York', 40.7128, -74.0060)
+        ) AS t(name, lat, lon)
+      `);
+
+      log("Registered tables:", db.tables().join(", "));
+
+      log("\nSELECT * FROM cities ORDER BY name:");
+      const rows = await db.sqlJSON(
+        "SELECT name, lat, lon FROM cities ORDER BY name"
+      );
+      log(rows);
+
+      log("\nDone.");
+    } catch (err) {
+      log("ERROR:", err?.message ?? String(err));
+      console.error(err);
+    }
+  </script>
+</body>
+</html>

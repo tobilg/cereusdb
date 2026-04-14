@@ -5,13 +5,35 @@ import { fileURLToPath } from 'node:url';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..');
 const CARGO_TOML_PATH = resolve(REPO_ROOT, 'Cargo.toml');
-const PACKAGE_JSONS = [
-  resolve(REPO_ROOT, 'packages', 'minimal', 'package.json'),
-  resolve(REPO_ROOT, 'packages', 'standard', 'package.json'),
-  resolve(REPO_ROOT, 'packages', 'global', 'package.json'),
-  resolve(REPO_ROOT, 'packages', 'full', 'package.json'),
-  resolve(REPO_ROOT, 'packages', 'documentation', 'package.json'),
-  resolve(REPO_ROOT, 'packages', 'playground', 'package.json'),
+const PACKAGE_MANIFESTS = [
+  { path: resolve(REPO_ROOT, 'js', 'package.json') },
+  { path: resolve(REPO_ROOT, 'packages', 'minimal', 'package.json') },
+  { path: resolve(REPO_ROOT, 'packages', 'standard', 'package.json') },
+  { path: resolve(REPO_ROOT, 'packages', 'global', 'package.json') },
+  { path: resolve(REPO_ROOT, 'packages', 'full', 'package.json') },
+  { path: resolve(REPO_ROOT, 'packages', 'documentation', 'package.json') },
+  { path: resolve(REPO_ROOT, 'packages', 'playground', 'package.json') },
+  {
+    path: resolve(REPO_ROOT, 'packages', 'simple-html', 'package.json'),
+    update(packageJson, version) {
+      packageJson.dependencies ??= {};
+      packageJson.dependencies['@cereusdb/minimal'] = `^${version}`;
+    },
+  },
+];
+const LOCKFILE_UPDATES = [
+  {
+    path: resolve(REPO_ROOT, 'js', 'package-lock.json'),
+  },
+  {
+    path: resolve(REPO_ROOT, 'packages', 'simple-html', 'package-lock.json'),
+    update(lockfile, version) {
+      lockfile.packages ??= {};
+      lockfile.packages[''] ??= {};
+      lockfile.packages[''].dependencies ??= {};
+      lockfile.packages[''].dependencies['@cereusdb/minimal'] = `^${version}`;
+    },
+  },
 ];
 
 function parseArgs(argv) {
@@ -49,10 +71,21 @@ const cargoToml = await readFile(CARGO_TOML_PATH, 'utf8');
 const baseVersion = extractWorkspaceVersion(cargoToml);
 const version = args.version ?? `${baseVersion}${args.suffix}`;
 
-for (const packageJsonPath of PACKAGE_JSONS) {
-  const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'));
+for (const manifest of PACKAGE_MANIFESTS) {
+  const packageJson = JSON.parse(await readFile(manifest.path, 'utf8'));
   packageJson.version = version;
-  await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+  manifest.update?.(packageJson, version);
+  await writeFile(manifest.path, `${JSON.stringify(packageJson, null, 2)}\n`);
+}
+
+for (const lockfileUpdate of LOCKFILE_UPDATES) {
+  const lockfile = JSON.parse(await readFile(lockfileUpdate.path, 'utf8'));
+  lockfile.version = version;
+  lockfile.packages ??= {};
+  lockfile.packages[''] ??= {};
+  lockfile.packages[''].version = version;
+  lockfileUpdate.update?.(lockfile, version);
+  await writeFile(lockfileUpdate.path, `${JSON.stringify(lockfile, null, 2)}\n`);
 }
 
 console.log(`Synced package versions to ${version}`);

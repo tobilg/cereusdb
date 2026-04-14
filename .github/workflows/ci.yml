@@ -143,5 +143,5 @@ jobs:
       - name: Build npm package shell
         run: node scripts/build-npm-package.mjs ${{ matrix.package }}
 
-      - name: Smoke-test packed npm artifact
+      - name: Smoke test packed npm package
         run: node scripts/smoke-packed-package.mjs ${{ matrix.package }}

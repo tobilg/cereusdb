@@ -160,6 +160,10 @@ mod c_malloc {
 
 use std::sync::Arc;
 
+use arrow_array::RecordBatch;
+use datafusion::dataframe::DataFrame;
+use datafusion::datasource::MemTable;
+use datafusion::logical_expr::{CreateMemoryTable, DdlStatement, LogicalPlan};
 use datafusion::prelude::SessionContext;
 use wasm_bindgen::prelude::*;
 
@@ -199,16 +203,7 @@ impl CereusDB {
     /// Returns results as Arrow IPC bytes (Uint8Array).
     /// The caller can decode this with the apache-arrow JS library.
     pub async fn sql(&self, query: &str) -> Result<js_sys::Uint8Array, JsValue> {
-        let df = self
-            .ctx
-            .sql(query)
-            .await
-            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
-
-        let batches = df
-            .collect()
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Collect error: {e}")))?;
+        let batches = self.execute_query(query).await?;
 
         let ipc_bytes = batches_to_ipc_bytes(&batches)
             .map_err(|e| JsValue::from_str(&format!("IPC serialization error: {e}")))?;
@@ -221,16 +216,7 @@ impl CereusDB {
     /// Execute a SQL query and return results as a JSON string.
     /// Convenience method for simple use cases.
     pub async fn sql_json(&self, query: &str) -> Result<String, JsValue> {
-        let df = self
-            .ctx
-            .sql(query)
-            .await
-            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
-
-        let batches = df
-            .collect()
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Collect error: {e}")))?;
+        let batches = self.execute_query(query).await?;
 
         result::batches_to_json(&batches)
             .map_err(|e| JsValue::from_str(&format!("JSON serialization error: {e}")))
@@ -328,5 +314,129 @@ impl CereusDB {
     /// Get version information.
     pub fn version(&self) -> String {
         format!("CereusDB {}", env!("CARGO_PKG_VERSION"))
+    }
+}
+
+impl CereusDB {
+    async fn execute_query(&self, query: &str) -> Result<Vec<RecordBatch>, JsValue> {
+        if self.try_execute_browser_safe_ddl(query).await? {
+            return Ok(Vec::new());
+        }
+
+        let df = self
+            .ctx
+            .sql(query)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
+
+        df.collect()
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Collect error: {e}")))
+    }
+
+    async fn try_execute_browser_safe_ddl(&self, query: &str) -> Result<bool, JsValue> {
+        let normalized = query.trim_start().to_ascii_uppercase();
+        if !normalized.starts_with("CREATE") {
+            return Ok(false);
+        }
+
+        let plan = self
+            .ctx
+            .state()
+            .create_logical_plan(query)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
+
+        // DataFusion's CreateMemoryTable executor uses Tokio JoinSet internals
+        // that are not available inside the browser runtime.
+        match plan {
+            LogicalPlan::Ddl(DdlStatement::CreateMemoryTable(cmd)) => {
+                self.execute_create_memory_table(cmd).await?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    async fn execute_create_memory_table(&self, cmd: CreateMemoryTable) -> Result<(), JsValue> {
+        let CreateMemoryTable {
+            name,
+            constraints,
+            input,
+            if_not_exists,
+            or_replace,
+            column_defaults,
+            temporary,
+        } = cmd;
+
+        if temporary {
+            return Err(JsValue::from_str(
+                "SQL error: Temporary tables not supported",
+            ));
+        }
+
+        let exists = self
+            .ctx
+            .table_exist(name.clone())
+            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
+
+        match (if_not_exists, or_replace, exists) {
+            (true, false, true) => Ok(()),
+            (false, true, true) => {
+                self.ctx
+                    .deregister_table(name.clone())
+                    .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
+                self.register_memory_table(
+                    name,
+                    Arc::unwrap_or_clone(input),
+                    constraints,
+                    column_defaults,
+                )
+                .await
+            }
+            (true, true, true) => Err(JsValue::from_str(
+                "SQL error: 'IF NOT EXISTS' cannot coexist with 'REPLACE'",
+            )),
+            (_, _, false) => {
+                self.register_memory_table(
+                    name,
+                    Arc::unwrap_or_clone(input),
+                    constraints,
+                    column_defaults,
+                )
+                .await
+            }
+            (false, false, true) => Err(JsValue::from_str(&format!(
+                "SQL error: Table '{name}' already exists"
+            ))),
+        }
+    }
+
+    async fn register_memory_table(
+        &self,
+        name: datafusion_common::TableReference,
+        input: LogicalPlan,
+        constraints: datafusion_common::Constraints,
+        column_defaults: Vec<(String, datafusion::logical_expr::Expr)>,
+    ) -> Result<(), JsValue> {
+        let schema = Arc::clone(input.schema().inner());
+        let batches = DataFrame::new(self.ctx.state(), input)
+            .collect()
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Collect error: {e}")))?;
+        let partitions = if batches.is_empty() {
+            vec![vec![]]
+        } else {
+            vec![batches]
+        };
+        let table = MemTable::try_new(schema, partitions)
+            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?
+            .with_constraints(constraints)
+            .with_column_defaults(column_defaults.into_iter().collect());
+
+        self.ctx
+            .register_table(name, Arc::new(table))
+            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
+        Ok(())
     }
 }

@@ -1,0 +1,19 @@
+{
+  "name": "@cereusdb/simple-html",
+  "version": "0.1.2",
+  "private": true,
+  "description": "Minimal static HTML example that loads @cereusdb/minimal directly from the browser without a bundler",
+  "type": "module",
+  "scripts": {
+    "start": "serve --cors --listen 8081 ."
+  },
+  "dependencies": {
+    "@cereusdb/minimal": "^0.1.2"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

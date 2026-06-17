@@ -1,0 +1,14 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 3f0d7d0..b37ec3f 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -124,7 +124,7 @@ features = [
+     "async",
+     "object_store",
+ ]
+ optional = true
+-default-features = true
++default-features = false
+ 
+ [dependencies.paste]
+ version = "1.0.15"

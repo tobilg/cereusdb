@@ -16,9 +16,46 @@ export interface CereusDBOptions {
   wasmUrl?: string;
   /** Preloaded WASM bytes/module for Node or custom loaders. */
   wasmSource?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module | Promise<Response>;
+  /** Browser-backed object stores to register at startup. */
+  objectStores?: ObjectStoreRegistryConfig;
 }
 
 export type RasterFormat = 'geotiff' | 'tiff';
+export type ObjectStoreProvider = 'http' | 's3' | 'gcs' | 'azure';
+
+export interface ObjectStoreRegistryConfig {
+  /** Maximum concurrent browser fetches used by object_store. */
+  maxConcurrency?: number;
+  /** Stores registered by URL prefix. */
+  stores: ObjectStoreConfig[];
+}
+
+export interface ObjectStoreConfig {
+  /** Optional diagnostic name. */
+  name?: string;
+  /** Backing provider. */
+  provider: ObjectStoreProvider;
+  /** URL prefix, for example https://host, s3://bucket, gs://bucket. */
+  url: string;
+  /** Upstream object_store option keys and primitive values. */
+  options?: Record<string, string | number | boolean>;
+}
+
+export interface RegisterParquetTableOptions {
+  /** File extension used during listing discovery. Defaults to .parquet. */
+  fileExtension?: string;
+  /** Optional DataFusion target partition count. */
+  targetPartitions?: number;
+}
+
+type WasmObjectStoreApi = {
+  register_object_stores(config: ObjectStoreRegistryConfig): void;
+  register_parquet_table(
+    name: string,
+    url: string,
+    options?: RegisterParquetTableOptions,
+  ): Promise<void>;
+};
 
 function toUint8Array(data: BufferSource): Uint8Array {
   if (ArrayBuffer.isView(data)) {
@@ -57,7 +94,11 @@ export class CereusDB {
       await init({ module_or_path: source });
     }
     const inner = WasmCereusDB.create();
-    return new CereusDB(inner);
+    const db = new CereusDB(inner);
+    if (options?.objectStores !== undefined) {
+      db.registerObjectStores(options.objectStores);
+    }
+    return db;
   }
 
   /**
@@ -81,6 +122,24 @@ export class CereusDB {
    */
   async registerRemoteParquet(name: string, url: string): Promise<void> {
     await this.inner.register_remote_parquet(name, url);
+  }
+
+  /**
+   * Register browser-backed object stores for ranged and listing reads.
+   */
+  registerObjectStores(config: ObjectStoreRegistryConfig): void {
+    this.objectStoreApi().register_object_stores(config);
+  }
+
+  /**
+   * Register a remote Parquet object or prefix through DataFusion's listing table path.
+   */
+  async registerParquetTable(
+    name: string,
+    url: string,
+    options: RegisterParquetTableOptions = {},
+  ): Promise<void> {
+    await this.objectStoreApi().register_parquet_table(name, url, options);
   }
 
   /**
@@ -140,5 +199,16 @@ export class CereusDB {
   /** Version string. */
   version(): string {
     return this.inner.version();
+  }
+
+  private objectStoreApi(): WasmObjectStoreApi {
+    const api = this.inner as unknown as Partial<WasmObjectStoreApi>;
+    if (
+      typeof api.register_object_stores !== 'function' ||
+      typeof api.register_parquet_table !== 'function'
+    ) {
+      throw new Error('Browser object stores are not available in this CereusDB build');
+    }
+    return api as WasmObjectStoreApi;
   }
 }

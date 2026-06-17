@@ -42,6 +42,21 @@ await db.registerRemoteParquet('cities', 'https://example.com/cities.parquet');
 db.registerGeoJSON('regions', geojsonObject);
 ```
 
+`registerRemoteParquet()` downloads a whole remote Parquet file into the browser runtime. For ranged reads, exact object URLs, and object-store listing, use the browser object-store API in `@cereusdb/standard`, `@cereusdb/global`, or `@cereusdb/full`:
+
+```ts
+db.registerObjectStores({
+  stores: [
+    {
+      provider: 'http',
+      url: 'https://example.com',
+    },
+  ],
+});
+
+await db.registerParquetTable('cities', 'https://example.com/cities.parquet');
+```
+
 `@cereusdb/full` additionally supports:
 
 ```ts

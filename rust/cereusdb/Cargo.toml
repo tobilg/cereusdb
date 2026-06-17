@@ -35,11 +35,12 @@ sedona-expr = { version = "0.4.0", path = "../../build/patched-sources/sedona-db
 sedona-schema = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-schema" }
 sedona-geometry = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-geometry" }
 sedona-geo = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-geo" }
+sedona-query-planner = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-query-planner", optional = true }
 sedona-spatial-join = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-spatial-join", optional = true }
 sedona-testing = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-testing", optional = true }
 sedona-raster = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-raster", optional = true }
 sedona-raster-functions = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/rust/sedona-raster-functions", default-features = false, optional = true }
-cereusdb-object-store = { path = "../cereusdb-object-store" }
+cereusdb-object-store = { path = "../cereusdb-object-store", optional = true }
 
 # Optional C-backed crates
 sedona-geos = { version = "0.4.0", path = "../../build/patched-sources/sedona-db/c/sedona-geos", optional = true }
@@ -61,7 +62,7 @@ arrow-schema = { workspace = true }
 arrow-json = { workspace = true }
 
 # Parquet (pure-Rust backends only)
-parquet = { version = "57.0.0", default-features = false, features = ["arrow", "snap", "brotli", "flate2-zlib-rs", "lz4"] }
+parquet = { workspace = true }
 
 # Other
 bytes = { workspace = true }
@@ -75,7 +76,8 @@ wkb = { workspace = true }
 [features]
 default = ["random-geometry"]
 random-geometry = ["dep:sedona-testing"]
-spatial-join = ["dep:sedona-spatial-join"]
+browser-object-store = ["dep:cereusdb-object-store"]
+spatial-join = ["dep:sedona-query-planner", "dep:sedona-spatial-join"]
 geos = ["dep:sedona-geos", "spatial-join"]
 proj = ["dep:sedona-proj", "sedona-proj/proj-sys"]
 s2 = ["dep:sedona-s2geography"]

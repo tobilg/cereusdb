@@ -23,11 +23,11 @@
 
 mod context;
 mod io;
-#[cfg(feature = "s2")]
-mod s2_order;
 #[cfg(feature = "random-geometry")]
 mod random_geometry;
 mod result;
+#[cfg(all(feature = "s2", not(feature = "proj")))]
+mod s2_order;
 
 // wasm-bindgen 0.2.114 generates Wasm catch wrappers whenever the final module
 // contains EH instructions. Our linked Emscripten-built C++ libraries can
@@ -77,7 +77,9 @@ mod c_malloc {
 
     #[no_mangle]
     pub unsafe extern "C" fn malloc(size: usize) -> *mut u8 {
-        let Some(lay) = layout(size) else { return core::ptr::null_mut() };
+        let Some(lay) = layout(size) else {
+            return core::ptr::null_mut();
+        };
         let p = unsafe { alloc(lay) };
         if !p.is_null() {
             sizes().as_mut().unwrap().insert(p as usize, size);
@@ -87,21 +89,27 @@ mod c_malloc {
 
     #[no_mangle]
     pub unsafe extern "C" fn free(ptr: *mut u8) {
-        if ptr.is_null() { return; }
+        if ptr.is_null() {
+            return;
+        }
         let key = ptr as usize;
         let size = match sizes().as_mut().unwrap().remove(&key) {
             Some(s) => s,
             None => return,
         };
         if let Some(lay) = layout(size) {
-            unsafe { dealloc(ptr, lay); }
+            unsafe {
+                dealloc(ptr, lay);
+            }
         }
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn calloc(n: usize, size: usize) -> *mut u8 {
         let total = n.saturating_mul(size);
-        let Some(lay) = layout(total) else { return core::ptr::null_mut() };
+        let Some(lay) = layout(total) else {
+            return core::ptr::null_mut();
+        };
         let p = unsafe { alloc_zeroed(lay) };
         if !p.is_null() {
             sizes().as_mut().unwrap().insert(p as usize, total);
@@ -111,13 +119,17 @@ mod c_malloc {
 
     #[no_mangle]
     pub unsafe extern "C" fn realloc(ptr: *mut u8, new_size: usize) -> *mut u8 {
-        if ptr.is_null() { return unsafe { malloc(new_size) }; }
+        if ptr.is_null() {
+            return unsafe { malloc(new_size) };
+        }
         let key = ptr as usize;
         let old_size = match sizes().as_mut().unwrap().remove(&key) {
             Some(s) => s,
             None => return core::ptr::null_mut(),
         };
-        let Some(old_lay) = layout(old_size) else { return core::ptr::null_mut() };
+        let Some(old_lay) = layout(old_size) else {
+            return core::ptr::null_mut();
+        };
         let p = unsafe { rs_realloc(ptr, old_lay, new_size.max(1)) };
         if !p.is_null() {
             sizes().as_mut().unwrap().insert(p as usize, new_size);
@@ -126,10 +138,20 @@ mod c_malloc {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn posix_memalign(memptr: *mut *mut u8, _align: usize, size: usize) -> i32 {
+    pub unsafe extern "C" fn posix_memalign(
+        memptr: *mut *mut u8,
+        _align: usize,
+        size: usize,
+    ) -> i32 {
         let p = unsafe { malloc(size) };
-        unsafe { *memptr = p; }
-        if p.is_null() && size > 0 { 12 } else { 0 }
+        unsafe {
+            *memptr = p;
+        }
+        if p.is_null() && size > 0 {
+            12
+        } else {
+            0
+        }
     }
 
     #[no_mangle]
@@ -145,17 +167,40 @@ mod c_malloc {
     }
 
     // Emscripten internal aliases
-    #[no_mangle] pub unsafe extern "C" fn __libc_malloc(s: usize) -> *mut u8 { unsafe { malloc(s) } }
-    #[no_mangle] pub unsafe extern "C" fn __libc_free(p: *mut u8) { unsafe { free(p) } }
-    #[no_mangle] pub unsafe extern "C" fn __libc_calloc(n: usize, s: usize) -> *mut u8 { unsafe { calloc(n, s) } }
-    #[no_mangle] pub unsafe extern "C" fn emscripten_builtin_malloc(s: usize) -> *mut u8 { unsafe { malloc(s) } }
-    #[no_mangle] pub unsafe extern "C" fn emscripten_builtin_free(p: *mut u8) { unsafe { free(p) } }
-    #[no_mangle] pub unsafe extern "C" fn emscripten_builtin_memalign(_a: usize, s: usize) -> *mut u8 { unsafe { malloc(s) } }
-    #[no_mangle] pub unsafe extern "C" fn emscripten_builtin_malloc_usable_size(p: *mut u8) -> usize { unsafe { malloc_usable_size(p) } }
+    #[no_mangle]
+    pub unsafe extern "C" fn __libc_malloc(s: usize) -> *mut u8 {
+        unsafe { malloc(s) }
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn __libc_free(p: *mut u8) {
+        unsafe { free(p) }
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn __libc_calloc(n: usize, s: usize) -> *mut u8 {
+        unsafe { calloc(n, s) }
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn emscripten_builtin_malloc(s: usize) -> *mut u8 {
+        unsafe { malloc(s) }
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn emscripten_builtin_free(p: *mut u8) {
+        unsafe { free(p) }
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn emscripten_builtin_memalign(_a: usize, s: usize) -> *mut u8 {
+        unsafe { malloc(s) }
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn emscripten_builtin_malloc_usable_size(p: *mut u8) -> usize {
+        unsafe { malloc_usable_size(p) }
+    }
 
     // _abort_js / abort: no-op (called during C++ exception cleanup paths)
-    #[no_mangle] pub unsafe extern "C" fn _abort_js() {}
-    #[no_mangle] pub unsafe extern "C" fn abort() {}
+    #[no_mangle]
+    pub unsafe extern "C" fn _abort_js() {}
+    #[no_mangle]
+    pub unsafe extern "C" fn abort() {}
 }
 
 use std::sync::Arc;
@@ -169,11 +214,8 @@ use wasm_bindgen::prelude::*;
 
 use context::create_sedona_session_context;
 use io::{
-    fetch_bytes,
-    load_geojson_to_memtable,
-    load_geotiff_buffer_to_memtable,
-    load_parquet_buffer_to_memtable,
-    load_raster_buffer_to_memtable,
+    fetch_bytes, load_geojson_to_memtable, load_geotiff_buffer_to_memtable,
+    load_parquet_buffer_to_memtable, load_raster_buffer_to_memtable,
 };
 use result::batches_to_ipc_bytes;
 
@@ -194,9 +236,7 @@ impl CereusDB {
         let ctx = create_sedona_session_context()
             .map_err(|e| JsValue::from_str(&format!("Failed to create context: {e}")))?;
 
-        Ok(CereusDB {
-            ctx: Arc::new(ctx),
-        })
+        Ok(CereusDB { ctx: Arc::new(ctx) })
     }
 
     /// Execute a SQL query.
@@ -251,23 +291,31 @@ impl CereusDB {
             .map_err(|e| JsValue::from_str(&format!("Failed to register parquet: {e}")))
     }
 
-    /// Register a GeoJSON string as a named table.
-    pub fn register_geojson(
+    /// Register browser-backed object stores for ranged/listing reads.
+    pub fn register_object_stores(&self, config: JsValue) -> Result<(), JsValue> {
+        self.register_object_stores_impl(config)
+    }
+
+    /// Register a remote Parquet object or prefix as a DataFusion listing table.
+    pub async fn register_parquet_table(
         &self,
         table_name: &str,
-        geojson: &str,
+        table_url: &str,
+        options: JsValue,
     ) -> Result<(), JsValue> {
+        self.register_parquet_table_impl(table_name, table_url, options)
+            .await
+    }
+
+    /// Register a GeoJSON string as a named table.
+    pub fn register_geojson(&self, table_name: &str, geojson: &str) -> Result<(), JsValue> {
         load_geojson_to_memtable(&self.ctx, table_name, geojson)
             .map_err(|e| JsValue::from_str(&format!("Failed to register GeoJSON: {e}")))
     }
 
     /// Register a GeoTIFF buffer as a single-column raster table.
     /// Requires the full GDAL-enabled build.
-    pub fn register_geotiff_buffer(
-        &self,
-        table_name: &str,
-        data: &[u8],
-    ) -> Result<(), JsValue> {
+    pub fn register_geotiff_buffer(&self, table_name: &str, data: &[u8]) -> Result<(), JsValue> {
         load_geotiff_buffer_to_memtable(&self.ctx, table_name, data)
             .map_err(|e| JsValue::from_str(&format!("Failed to register GeoTIFF: {e}")))
     }
@@ -318,6 +366,52 @@ impl CereusDB {
 }
 
 impl CereusDB {
+    #[cfg(feature = "browser-object-store")]
+    fn register_object_stores_impl(&self, config: JsValue) -> Result<(), JsValue> {
+        let config = serde_wasm_bindgen::from_value(config)
+            .map_err(|e| JsValue::from_str(&format!("Invalid object store config: {e}")))?;
+        cereusdb_object_store::register_object_stores(&self.ctx, config)
+            .map_err(|e| JsValue::from_str(&format!("Failed to register object stores: {e}")))
+    }
+
+    #[cfg(not(feature = "browser-object-store"))]
+    fn register_object_stores_impl(&self, _config: JsValue) -> Result<(), JsValue> {
+        Err(JsValue::from_str(
+            "Browser object stores are not enabled in this CereusDB build",
+        ))
+    }
+
+    #[cfg(feature = "browser-object-store")]
+    async fn register_parquet_table_impl(
+        &self,
+        table_name: &str,
+        table_url: &str,
+        options: JsValue,
+    ) -> Result<(), JsValue> {
+        let options = if options.is_undefined() || options.is_null() {
+            cereusdb_object_store::RegisterParquetTableOptions::default()
+        } else {
+            serde_wasm_bindgen::from_value(options)
+                .map_err(|e| JsValue::from_str(&format!("Invalid Parquet table options: {e}")))?
+        };
+
+        cereusdb_object_store::register_parquet_table(&self.ctx, table_name, table_url, options)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to register Parquet table: {e}")))
+    }
+
+    #[cfg(not(feature = "browser-object-store"))]
+    async fn register_parquet_table_impl(
+        &self,
+        _table_name: &str,
+        _table_url: &str,
+        _options: JsValue,
+    ) -> Result<(), JsValue> {
+        Err(JsValue::from_str(
+            "Browser object stores are not enabled in this CereusDB build",
+        ))
+    }
+
     async fn execute_query(&self, query: &str) -> Result<Vec<RecordBatch>, JsValue> {
         if self.try_execute_browser_safe_ddl(query).await? {
             return Ok(Vec::new());

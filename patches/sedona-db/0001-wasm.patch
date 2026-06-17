@@ -353,10 +353,10 @@ index 072f15b..c6b7081 100644
 -datafusion-expr = { workspace = true }
 -geo-traits = { workspace = true }
 +serde_json = "1"
-+arrow-schema = "57.0.0"
-+arrow-array = "57.0.0"
-+datafusion-common = { version = "51.0.0", default-features = false }
-+datafusion-expr = "51.0.0"
++arrow-schema = "57.1.0"
++arrow-array = "57.1.0"
++datafusion-common = { version = "52.5.0", default-features = false }
++datafusion-expr = "52.5.0"
 +geo-traits = "0.3.0"
  proj-sys = { version = "0.26.0", optional = true }
 -sedona-common = { workspace = true }

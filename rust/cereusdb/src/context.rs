@@ -22,6 +22,9 @@
 //! - Geo-based spatial functions (ST_Area, ST_Buffer, ST_Centroid, etc.)
 //! - Information schema enabled
 
+#[cfg(feature = "spatial-join")]
+use std::sync::Arc;
+
 use datafusion::error::Result;
 use datafusion::execution::session_state::SessionStateBuilder;
 use datafusion::logical_expr::ScalarUDFImpl;
@@ -39,7 +42,7 @@ use wasm_bindgen::JsValue;
 
 #[cfg(feature = "random-geometry")]
 use crate::random_geometry::register_random_geometry_function;
-#[cfg(feature = "s2")]
+#[cfg(all(feature = "s2", not(feature = "proj")))]
 use crate::s2_order::S2OrderLngLat;
 
 #[cfg(feature = "spatial-join")]
@@ -68,11 +71,17 @@ pub fn create_sedona_session_context() -> Result<SessionContext> {
     let session_config = SessionConfig::new().with_information_schema(true);
 
     #[cfg(feature = "spatial-join")]
-    let state_builder = sedona_spatial_join::register_planner(
-        SessionStateBuilder::new()
+    let state_builder = {
+        let state_builder = SessionStateBuilder::new()
             .with_default_features()
-            .with_config(session_config),
-    )?;
+            .with_config(session_config);
+        let planner = sedona_query_planner::query_planner::SedonaQueryPlanner::new()
+            .with_spatial_join_physical_planner(Arc::new(
+                sedona_spatial_join::DefaultSpatialJoinPhysicalPlanner::new(),
+            ));
+        sedona_query_planner::optimizer::register_spatial_join_logical_optimizer(state_builder)?
+            .with_query_planner(Arc::new(planner))
+    };
 
     #[cfg(not(feature = "spatial-join"))]
     let state_builder = SessionStateBuilder::new()
@@ -131,12 +140,11 @@ fn register_spatial_functions(ctx: &SessionContext) -> Result<()> {
     // ST_SetSRID, ST_Dimension, ST_GeometryType, ST_NumGeometries,
     // ST_NPoints, ST_X, ST_Y, ST_Z, ST_XMin/Max, ST_YMin/Max, etc.
     console_log("[context] registering sedona-functions...");
-    let function_set = sedona_functions::register::default_function_set();
-    register_function_set(ctx, function_set);
+    let mut fs = sedona_functions::register::default_function_set();
+    register_function_set(ctx, &fs);
 
     console_log("[context] registering sedona-geo scalars...");
     let geo_kernels = sedona_geo::register::scalar_kernels();
-    let mut fs = FunctionSet::new();
     for (name, kernel_refs) in geo_kernels {
         let udf = fs.add_scalar_udf_impl(name, kernel_refs)?;
         ctx.register_udf(udf.clone().into());
@@ -184,14 +192,19 @@ fn register_spatial_functions(ctx: &SessionContext) -> Result<()> {
             ctx.register_udf(udf.clone().into());
         }
 
+        let s2_agg_kernels = sedona_s2geography::register::aggregate_kernels();
+        for (name, acc_refs) in s2_agg_kernels {
+            let udf = fs.add_aggregate_udf_kernel(name, acc_refs)?;
+            ctx.register_udaf(udf.clone().into());
+        }
+
         console_log("[context] registering S2 sd_order override...");
         #[cfg(feature = "proj")]
         let sd_order_kernel = sedona_proj::sd_order_lnglat::OrderLngLat::new(
-            sedona_s2geography::s2geography::s2_cell_id_from_lnglat,
+            sedona_s2geography::utils::s2_cell_id_from_lnglat,
         );
         #[cfg(not(feature = "proj"))]
-        let sd_order_kernel =
-            S2OrderLngLat::new(sedona_s2geography::s2geography::s2_cell_id_from_lnglat);
+        let sd_order_kernel = S2OrderLngLat::new(sedona_s2geography::utils::s2_cell_id_from_lnglat);
         let udf = fs.add_scalar_udf_impl("sd_order", sd_order_kernel)?;
         ctx.register_udf(udf.clone().into());
     }
@@ -200,7 +213,7 @@ fn register_spatial_functions(ctx: &SessionContext) -> Result<()> {
     {
         console_log("[context] registering raster functions...");
         let raster_function_set = sedona_raster_functions::register::default_function_set();
-        register_function_set(ctx, raster_function_set);
+        register_function_set(ctx, &raster_function_set);
     }
 
     console_log("[context] all functions registered");
@@ -219,13 +232,15 @@ fn configure_proj_engine() -> Result<()> {
 fn configure_gdal_engine() -> Result<()> {
     console_log("[context] configuring GDAL engine...");
     sedona_gdal::global::configure_global_gdal_api(sedona_gdal::global::GdalApiBuilder::default())
-        .map_err(|error| datafusion::error::DataFusionError::Execution(format!(
-            "Failed to configure GDAL engine: {error}"
-        )))
+        .map_err(|error| {
+            datafusion::error::DataFusionError::Execution(format!(
+                "Failed to configure GDAL engine: {error}"
+            ))
+        })
 }
 
 /// Register a FunctionSet on a SessionContext.
-fn register_function_set(ctx: &SessionContext, function_set: FunctionSet) {
+fn register_function_set(ctx: &SessionContext, function_set: &FunctionSet) {
     for udf in function_set.scalar_udfs() {
         if UNSUPPORTED_WASM_SCALAR_UDFS
             .iter()

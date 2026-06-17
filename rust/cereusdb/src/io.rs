@@ -19,9 +19,9 @@
 
 use std::sync::Arc;
 
-use arrow_array::{ArrayRef, RecordBatch, StringArray};
 #[cfg(feature = "gdal")]
 use arrow_array::StructArray;
+use arrow_array::{ArrayRef, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
@@ -83,8 +83,7 @@ pub async fn fetch_bytes(_url: &str) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(feature = "gdal")]
-static VSI_FILE_COUNTER: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+static VSI_FILE_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Load raster bytes into a single-column raster MemTable and register it on the SessionContext.
 #[cfg(feature = "gdal")]
@@ -131,10 +130,7 @@ pub fn load_raster_buffer_to_memtable(
 
     let schema = Arc::new(Schema::new(vec![RASTER.to_storage_field("raster", true)?]));
 
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![Arc::new(raster_array) as ArrayRef],
-    )?;
+    let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(raster_array) as ArrayRef])?;
     let table = MemTable::try_new(schema, vec![vec![batch]])?;
     ctx.register_table(table_name, Arc::new(table))?;
 
@@ -271,8 +267,8 @@ unsafe fn dataset_to_raster_struct(
     let crs = dataset_crs_as_projjson(api, dataset)?;
 
     let raster_metadata = RasterMetadata {
-        width: width as u64,
-        height: height as u64,
+        width: width as i64,
+        height: height as i64,
         upperleft_x: geo_transform[0],
         upperleft_y: geo_transform[3],
         scale_x: geo_transform[1],
@@ -371,11 +367,12 @@ unsafe fn dataset_crs_as_projjson(
         return Ok(None);
     }
 
-    let spatial_ref = sedona_gdal::spatial_ref::SpatialRef::from_c_srs_clone(api, spatial_ref_handle)
-        .map_err(|error| format!("Failed to clone raster spatial reference: {error}"))?;
-    let projjson = spatial_ref
-        .to_projjson()
-        .map_err(|error| format!("Failed to export raster spatial reference as PROJJSON: {error}"))?;
+    let spatial_ref =
+        sedona_gdal::spatial_ref::SpatialRef::from_c_srs_clone(api, spatial_ref_handle)
+            .map_err(|error| format!("Failed to clone raster spatial reference: {error}"))?;
+    let projjson = spatial_ref.to_projjson().map_err(|error| {
+        format!("Failed to export raster spatial reference as PROJJSON: {error}")
+    })?;
     let projjson = projjson.trim();
 
     if projjson.is_empty() {
@@ -418,65 +415,52 @@ fn read_band_nodata_value(
     let mut has_nodata = 0;
     let bytes = unsafe {
         match band_data_type {
-            BandDataType::UInt8 => {
-                (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
-                    .round()
-                    .clamp(u8::MIN as f64, u8::MAX as f64) as u8)
+            BandDataType::UInt8 => (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
+                .round()
+                .clamp(u8::MIN as f64, u8::MAX as f64) as u8)
+                .to_le_bytes()
+                .to_vec(),
+            BandDataType::Int8 => (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
+                .round()
+                .clamp(i8::MIN as f64, i8::MAX as f64) as i8)
+                .to_le_bytes()
+                .to_vec(),
+            BandDataType::UInt16 => (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
+                .round()
+                .clamp(u16::MIN as f64, u16::MAX as f64)
+                as u16)
+                .to_le_bytes()
+                .to_vec(),
+            BandDataType::Int16 => (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
+                .round()
+                .clamp(i16::MIN as f64, i16::MAX as f64)
+                as i16)
+                .to_le_bytes()
+                .to_vec(),
+            BandDataType::UInt32 => (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
+                .round()
+                .clamp(u32::MIN as f64, u32::MAX as f64)
+                as u32)
+                .to_le_bytes()
+                .to_vec(),
+            BandDataType::Int32 => (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
+                .round()
+                .clamp(i32::MIN as f64, i32::MAX as f64)
+                as i32)
+                .to_le_bytes()
+                .to_vec(),
+            BandDataType::UInt64 => {
+                gdal_sys::GDALGetRasterNoDataValueAsUInt64(band, &mut has_nodata)
                     .to_le_bytes()
                     .to_vec()
             }
-            BandDataType::Int8 => {
-                (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
-                    .round()
-                    .clamp(i8::MIN as f64, i8::MAX as f64) as i8)
-                    .to_le_bytes()
-                    .to_vec()
-            }
-            BandDataType::UInt16 => {
-                (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
-                    .round()
-                    .clamp(u16::MIN as f64, u16::MAX as f64) as u16)
-                    .to_le_bytes()
-                    .to_vec()
-            }
-            BandDataType::Int16 => {
-                (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
-                    .round()
-                    .clamp(i16::MIN as f64, i16::MAX as f64) as i16)
-                    .to_le_bytes()
-                    .to_vec()
-            }
-            BandDataType::UInt32 => {
-                (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
-                    .round()
-                    .clamp(u32::MIN as f64, u32::MAX as f64) as u32)
-                    .to_le_bytes()
-                    .to_vec()
-            }
-            BandDataType::Int32 => {
-                (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
-                    .round()
-                    .clamp(i32::MIN as f64, i32::MAX as f64) as i32)
-                    .to_le_bytes()
-                    .to_vec()
-            }
-            BandDataType::UInt64 => gdal_sys::GDALGetRasterNoDataValueAsUInt64(
-                band,
-                &mut has_nodata,
-            )
-            .to_le_bytes()
-            .to_vec(),
-            BandDataType::Int64 => gdal_sys::GDALGetRasterNoDataValueAsInt64(
-                band,
-                &mut has_nodata,
-            )
-            .to_le_bytes()
-            .to_vec(),
-            BandDataType::Float32 => {
-                (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata) as f32)
-                    .to_le_bytes()
-                    .to_vec()
-            }
+            BandDataType::Int64 => gdal_sys::GDALGetRasterNoDataValueAsInt64(band, &mut has_nodata)
+                .to_le_bytes()
+                .to_vec(),
+            BandDataType::Float32 => (gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
+                as f32)
+                .to_le_bytes()
+                .to_vec(),
             BandDataType::Float64 => gdal_sys::GDALGetRasterNoDataValue(band, &mut has_nodata)
                 .to_le_bytes()
                 .to_vec(),
@@ -546,11 +530,12 @@ pub fn load_geojson_to_memtable(
     table_name: &str,
     geojson_str: &str,
 ) -> DFResult<()> {
-    let geojson: geojson::GeoJson = geojson_str
-        .parse()
-        .map_err(|e| datafusion::error::DataFusionError::External(Box::new(
-            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid GeoJSON: {e}"))
-        )))?;
+    let geojson: geojson::GeoJson = geojson_str.parse().map_err(|e| {
+        datafusion::error::DataFusionError::External(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Invalid GeoJSON: {e}"),
+        )))
+    })?;
 
     let features = match geojson {
         geojson::GeoJson::FeatureCollection(fc) => fc.features,
@@ -617,27 +602,27 @@ pub fn load_geojson_to_memtable(
 
 /// Convert a GeoJSON geometry to WKT string.
 fn geojson_geometry_to_wkt(geom: &geojson::Geometry) -> String {
-    use geojson::Value;
+    use geojson::GeometryValue;
     match &geom.value {
-        Value::Point(coords) => {
-            format!("POINT({} {})", coords[0], coords[1])
+        GeometryValue::Point { coordinates } => {
+            format!("POINT({} {})", coordinates[0], coordinates[1])
         }
-        Value::MultiPoint(points) => {
-            let pts: Vec<String> = points
+        GeometryValue::MultiPoint { coordinates } => {
+            let pts: Vec<String> = coordinates
                 .iter()
                 .map(|c| format!("{} {}", c[0], c[1]))
                 .collect();
             format!("MULTIPOINT({})", pts.join(", "))
         }
-        Value::LineString(coords) => {
-            let pts: Vec<String> = coords
+        GeometryValue::LineString { coordinates } => {
+            let pts: Vec<String> = coordinates
                 .iter()
                 .map(|c| format!("{} {}", c[0], c[1]))
                 .collect();
             format!("LINESTRING({})", pts.join(", "))
         }
-        Value::MultiLineString(lines) => {
-            let line_strs: Vec<String> = lines
+        GeometryValue::MultiLineString { coordinates } => {
+            let line_strs: Vec<String> = coordinates
                 .iter()
                 .map(|line| {
                     let pts: Vec<String> =
@@ -647,8 +632,8 @@ fn geojson_geometry_to_wkt(geom: &geojson::Geometry) -> String {
                 .collect();
             format!("MULTILINESTRING({})", line_strs.join(", "))
         }
-        Value::Polygon(rings) => {
-            let ring_strs: Vec<String> = rings
+        GeometryValue::Polygon { coordinates } => {
+            let ring_strs: Vec<String> = coordinates
                 .iter()
                 .map(|ring| {
                     let pts: Vec<String> =
@@ -658,8 +643,8 @@ fn geojson_geometry_to_wkt(geom: &geojson::Geometry) -> String {
                 .collect();
             format!("POLYGON({})", ring_strs.join(", "))
         }
-        Value::MultiPolygon(polys) => {
-            let poly_strs: Vec<String> = polys
+        GeometryValue::MultiPolygon { coordinates } => {
+            let poly_strs: Vec<String> = coordinates
                 .iter()
                 .map(|poly| {
                     let ring_strs: Vec<String> = poly
@@ -675,8 +660,8 @@ fn geojson_geometry_to_wkt(geom: &geojson::Geometry) -> String {
                 .collect();
             format!("MULTIPOLYGON({})", poly_strs.join(", "))
         }
-        Value::GeometryCollection(geoms) => {
-            let geom_strs: Vec<String> = geoms.iter().map(geojson_geometry_to_wkt).collect();
+        GeometryValue::GeometryCollection { geometries } => {
+            let geom_strs: Vec<String> = geometries.iter().map(geojson_geometry_to_wkt).collect();
             format!("GEOMETRYCOLLECTION({})", geom_strs.join(", "))
         }
     }

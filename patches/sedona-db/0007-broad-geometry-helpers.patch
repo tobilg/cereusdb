@@ -1,26 +1,27 @@
 diff --git a/rust/sedona-functions/src/lib.rs b/rust/sedona-functions/src/lib.rs
-index afabe9a..ecd6999 100644
+index ba8a3d9c..9186f215 100644
 --- a/rust/sedona-functions/src/lib.rs
 +++ b/rust/sedona-functions/src/lib.rs
 @@ -32,6 +32,8 @@ mod st_dimension;
  mod st_dump;
  pub mod st_envelope;
- mod st_envelope_agg;
+ pub mod st_envelope_agg;
 +mod st_expand;
 +mod st_exteriorring;
  mod st_flipcoordinates;
  mod st_force_dim;
  mod st_geography_cast;
-@@ -47,6 +49,7 @@ mod st_iscollection;
+@@ -48,6 +50,7 @@ mod st_iscollection;
  mod st_isempty;
  mod st_knn;
+ mod st_linesubstring;
  mod st_makeline;
 +mod st_makeenvelope;
  mod st_numgeometries;
  mod st_point;
  mod st_pointn;
 diff --git a/rust/sedona-functions/src/register.rs b/rust/sedona-functions/src/register.rs
-index 002e2fb..edf4f85 100644
+index 1071d8f8..f34a4c06 100644
 --- a/rust/sedona-functions/src/register.rs
 +++ b/rust/sedona-functions/src/register.rs
 @@ -49,6 +49,8 @@ pub fn default_function_set() -> FunctionSet {
@@ -30,9 +31,9 @@ index 002e2fb..edf4f85 100644
 +        crate::st_expand::st_expand_udf,
 +        crate::st_exteriorring::st_exteriorring_udf,
          crate::st_flipcoordinates::st_flipcoordinates_udf,
-         crate::st_geography_cast::st_geogtogeometry_udf,
-         crate::st_geography_cast::st_geomtogeography_udf,
-@@ -71,6 +73,7 @@ pub fn default_function_set() -> FunctionSet {
+         crate::st_force_dim::st_force2d_udf,
+         crate::st_force_dim::st_force3d_udf,
+@@ -75,6 +77,7 @@ pub fn default_function_set() -> FunctionSet {
          crate::st_isempty::st_isempty_udf,
          crate::st_knn::st_knn_udf,
          crate::st_makeline::st_makeline_udf,

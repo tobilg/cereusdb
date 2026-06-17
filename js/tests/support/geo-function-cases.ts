@@ -146,6 +146,17 @@ const MANUAL_CASES: Record<string, GeoFunctionCase> = {
     execution: 'in-process',
     expectation: { kind: 'field-equals', field: 'value', value: 0.5 },
   },
+  st_longestline: {
+    name: 'st_longestline',
+    query: "SELECT ST_AsText(ST_LongestLine(ST_GeogFromWKT('POINT(0 0)'), ST_GeogFromWKT('POINT(3 4)'))) AS value",
+    source: 'manual',
+    execution: 'in-process',
+    expectation: {
+      kind: 'field-includes',
+      field: 'value',
+      value: 'LINESTRING(0 0,3',
+    },
+  },
   st_maxdistance: {
     name: 'st_maxdistance',
     query: "SELECT ROUND(ST_MaxDistance(ST_GeomFromText('POLYGON((10 10, 11 10, 10 11, 10 10))'), ST_GeomFromText('POLYGON((0 0, 1 0, 0 1, 0 0))')), 6) AS value",

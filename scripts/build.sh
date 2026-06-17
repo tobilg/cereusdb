@@ -26,7 +26,7 @@ while [[ $# -gt 0 ]]; do
         --with-proj) BUILD_PROJ=true; append_feature proj ;;
         --with-gdal) BUILD_GDAL=true; append_feature gdal ;;
         --with-s2) BUILD_S2=true; append_feature s2 ;;
-        --full) BUILD_GEOS=true; BUILD_PROJ=true; BUILD_GDAL=true; BUILD_S2=true; FEATURES="geos,proj,gdal,s2" ;;
+        --full) BUILD_GEOS=true; BUILD_PROJ=true; BUILD_GDAL=true; BUILD_S2=true; append_feature geos; append_feature proj; append_feature gdal; append_feature s2 ;;
         --out-dir) OUT_DIR="$2"; shift ;;
         --no-link-pkg) LINK_PKG=false ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -53,6 +53,10 @@ fi
 if [ "$BUILD_PROJ" = true ] && [ "$BUILD_GEOS" != true ]; then
     BUILD_GEOS=true
     append_feature geos
+fi
+
+if [ "$BUILD_PROJ" = true ] || [ "$BUILD_S2" = true ] || [ "$BUILD_GDAL" = true ]; then
+    append_feature browser-object-store
 fi
 
 if [ "$BUILD_GEOS" != true ] && [ "$BUILD_PROJ" != true ] && [ "$BUILD_GDAL" != true ] && [ "$BUILD_S2" != true ]; then

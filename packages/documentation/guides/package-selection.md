@@ -1,5 +1,15 @@
 # Package Selection
 
+## Browser object stores
+
+Browser object stores are included in:
+
+- `@cereusdb/standard`
+- `@cereusdb/global`
+- `@cereusdb/full`
+
+They are not included in `@cereusdb/minimal`. Use `standard` or larger when you need ranged remote Parquet reads or S3/GCS/Azure/HTTP object-store providers.
+
 ## `@cereusdb/minimal`
 
 Use this when you need the smallest browser package with:
@@ -11,6 +21,7 @@ Use this when you need the smallest browser package with:
 
 Not included:
 
+- browser object stores
 - `ST_Transform`
 - S2 geography kernels
 - raster `RS_*`
@@ -21,6 +32,7 @@ Use this when you need everything in `minimal`, plus:
 
 - `ST_Transform`
 - CRS-aware reprojection through PROJ
+- browser object stores for ranged remote Parquet reads and S3/GCS/Azure/HTTP providers
 
 ## `@cereusdb/global`
 

@@ -6,10 +6,21 @@ edition.workspace = true
 description = "WASM-compatible object store adapter for CereusDB"
 
 [dependencies]
-object_store = { workspace = true }
+object_store = { workspace = true, features = ["aws-base", "gcp-base", "azure-base", "http-base"] }
 url = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
 datafusion = { workspace = true, default-features = false }
+datafusion-catalog-listing = { workspace = true }
+datafusion-datasource-parquet = { workspace = true }
+parquet = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"

@@ -28,3 +28,6 @@
 [submodule "deps/sqlite-src"]
 	path = deps/sqlite-src
 	url = https://github.com/sqlite/sqlite.git
+[submodule "deps/object-store"]
+	path = deps/object-store
+	url = https://github.com/apache/arrow-rs-object-store.git

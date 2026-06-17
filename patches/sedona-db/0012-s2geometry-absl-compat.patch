@@ -1,0 +1,307 @@
+diff --git a/c/sedona-s2geography/s2geometry/src/s2/util/endian/endian.h b/c/sedona-s2geography/s2geometry/src/s2/util/endian/endian.h
+index 61ace1c..f38ddf0 100644
+--- a/c/sedona-s2geography/s2geometry/src/s2/util/endian/endian.h
++++ b/c/sedona-s2geography/s2geometry/src/s2/util/endian/endian.h
+@@ -18,15 +18,36 @@
+ 
+ #include <cstdint>
+ 
++#include "absl/base/internal/endian.h"
+ #include "absl/numeric/bits.h"
+ #include "absl/numeric/int128.h"
+ #include "s2/util/gtl/unaligned.h"
+ 
+ namespace s2endian {
++inline uint16_t byteswap(uint16_t host_int) { return absl::gbswap_16(host_int); }
++inline uint32_t byteswap(uint32_t host_int) { return absl::gbswap_32(host_int); }
++inline uint64_t byteswap(uint64_t host_int) { return absl::gbswap_64(host_int); }
++
+ // TODO(user): Trim unused Encoder functions and drop int128 API.
+ inline absl::uint128 byteswap(absl::uint128 host_int) {
+-  return absl::MakeUint128(absl::byteswap(absl::Uint128Low64(host_int)),
+-                           absl::byteswap(absl::Uint128High64(host_int)));
++  return absl::MakeUint128(byteswap(absl::Uint128Low64(host_int)),
++                           byteswap(absl::Uint128High64(host_int)));
++}
++
++inline constexpr bool IsLittleEndian() {
++#ifdef ABSL_IS_LITTLE_ENDIAN
++  return true;
++#else
++  return false;
++#endif
++}
++
++inline constexpr bool IsBigEndian() {
++#ifdef ABSL_IS_BIG_ENDIAN
++  return true;
++#else
++  return false;
++#endif
+ }
+ }  // namespace s2endian
+ 
+@@ -54,7 +75,7 @@ class LittleEndian {
+   }
+ 
+   static constexpr bool IsLittleEndian() {
+-    return absl::endian::native == absl::endian::little;
++    return s2endian::IsLittleEndian();
+   }
+ 
+   // Functions to do unaligned loads and stores in little-endian order.
+@@ -111,11 +132,14 @@ class LittleEndian {
+  private:
+   template <typename T>
+   static T byteswap_if_big_endian(T x) {
+-    static_assert(absl::endian::native == absl::endian::big ||
+-                  absl::endian::native == absl::endian::little,
+-                  "Unsupported endianness.");
+-    if constexpr (absl::endian::native == absl::endian::big) {
+-      using absl::byteswap;
++    static_assert(
++#if defined(ABSL_IS_LITTLE_ENDIAN) || defined(ABSL_IS_BIG_ENDIAN)
++        true,
++#else
++        false,
++#endif
++        "Unsupported endianness.");
++    if constexpr (!s2endian::IsLittleEndian()) {
+       using s2endian::byteswap;
+       x = byteswap(x);
+     }
+diff --git a/c/sedona-s2geography/s2geometry/src/s2/encoded_s2point_vector.cc b/c/sedona-s2geography/s2geometry/src/s2/encoded_s2point_vector.cc
+--- a/c/sedona-s2geography/s2geometry/src/s2/encoded_s2point_vector.cc
++++ b/c/sedona-s2geography/s2geometry/src/s2/encoded_s2point_vector.cc
+@@ -30,6 +30,7 @@
+ #include "absl/types/span.h"
+ #include "s2/util/coding/coder.h"
+ #include "s2/util/coding/varint.h"
++#include "s2/util/endian/endian.h"
+ #include "s2/encoded_string_vector.h"
+ #include "s2/encoded_uint_vector.h"
+ #include "s2/s2cell_id.h"
+@@ -203,7 +204,7 @@
+ 
+ // Encodes a vector of points, optimizing for (encoding and decoding) speed.
+ void EncodeS2PointVectorFast(Span<const S2Point> points, Encoder* encoder) {
+-  if constexpr (absl::endian::native != absl::endian::little) {
++  if constexpr (!s2endian::IsLittleEndian()) {
+     ABSL_LOG(FATAL) << "Not implemented on big-endian architectures";
+   }
+ 
+@@ -227,7 +228,7 @@
+ #else
+   constexpr bool kIsArm32 = false;
+ #endif
+-  if constexpr (absl::endian::native != absl::endian::little || kIsArm32) {
++  if constexpr (!s2endian::IsLittleEndian() || kIsArm32) {
+     // TODO(b/231674214): Make this work on platforms that don't support
+     // unaligned 64-bit little-endian reads, e.g. by falling back to
+     //
+diff --git a/c/sedona-s2geography/s2geometry/src/s2/internal/s2index_cell_data.h b/c/sedona-s2geography/s2geometry/src/s2/internal/s2index_cell_data.h
+--- a/c/sedona-s2geography/s2geometry/src/s2/internal/s2index_cell_data.h
++++ b/c/sedona-s2geography/s2geometry/src/s2/internal/s2index_cell_data.h
+@@ -142,7 +142,7 @@
+   // Returns an S2Cell instance for the current cell.
+   const S2Cell& cell() const {
+     if (!s2cell_set_.load(std::memory_order_acquire)) {
+-      absl::MutexLock lock(lock_);
++      absl::MutexLock lock(&lock_);
+       if (!s2cell_set_.load(std::memory_order_relaxed)) {
+         s2cell_ = S2Cell(cell_id_);
+         s2cell_set_.store(true, std::memory_order_release);
+@@ -156,7 +156,7 @@
+   // Returns the center point of the current cell.
+   const S2Point& center() const {
+     if (!center_set_.load(std::memory_order_acquire)) {
+-      absl::MutexLock lock(lock_);
++      absl::MutexLock lock(&lock_);
+       if (!center_set_.load(std::memory_order_relaxed)) {
+         cell_center_ = cell_id_.ToPoint();
+         center_set_.store(true, std::memory_order_release);
+diff --git a/c/sedona-s2geography/s2geometry/src/s2/mutable_s2shape_index.cc b/c/sedona-s2geography/s2geometry/src/s2/mutable_s2shape_index.cc
+--- a/c/sedona-s2geography/s2geometry/src/s2/mutable_s2shape_index.cc
++++ b/c/sedona-s2geography/s2geometry/src/s2/mutable_s2shape_index.cc
+@@ -587,7 +587,7 @@
+     // is unlocked the index_status_ is guaranteed to be FRESH.
+     ++update_state_->num_waiting;
+     lock_.unlock();
+-    update_state_->wait_mutex.lock();
++    update_state_->wait_mutex.Lock();
+     lock_.lock();
+     --update_state_->num_waiting;
+     UnlockAndSignal();  // Notify other waiting threads.
+@@ -604,7 +604,7 @@
+     update_state_ = make_unique<UpdateState>();
+     // lock_.Lock wait_mutex *before* calling Unlock() to ensure that all other
+     // threads will block on it.
+-    update_state_->wait_mutex.lock();
++    update_state_->wait_mutex.Lock();
+     // Release the spinlock before doing any real work.
+     lock_.unlock();
+     ApplyUpdatesInternal();
+@@ -632,7 +632,7 @@
+   // We need to unlock wait_mutex before destroying it even if there are no
+   // waiting threads.
+-  update_state_->wait_mutex.unlock();
++  update_state_->wait_mutex.Unlock();
+   if (num_waiting == 0) {
+     update_state_.reset();
+   }
+ }
+diff --git a/c/sedona-s2geography/s2geometry/src/s2/util/math/exactfloat/exactfloat.cc b/c/sedona-s2geography/s2geometry/src/s2/util/math/exactfloat/exactfloat.cc
+--- a/c/sedona-s2geography/s2geometry/src/s2/util/math/exactfloat/exactfloat.cc
++++ b/c/sedona-s2geography/s2geometry/src/s2/util/math/exactfloat/exactfloat.cc
+@@ -31,6 +31,7 @@
+ #include "absl/log/absl_log.h"
+ #include "absl/strings/str_cat.h"
+ #include "absl/strings/str_format.h"
++#include "s2/util/endian/endian.h"
+ 
+ #ifndef OPENSSL_IS_BORINGSSL
+ #include "absl/container/fixed_array.h"  // IWYU pragma: keep
+@@ -99,10 +100,9 @@
+     return BN_get_word(bn);
+   } else {
+     uint64_t v;
+-    static_assert(absl::endian::native == absl::endian::little ||
+-                      absl::endian::native == absl::endian::big,
++    static_assert(s2endian::IsLittleEndian() || s2endian::IsBigEndian(),
+                   "Unsupported endianness.");
+-    if constexpr (absl::endian::native == absl::endian::little) {
++    if constexpr (s2endian::IsLittleEndian()) {
+       ABSL_CHECK_EQ(
+           BN_bn2lebinpad(bn, reinterpret_cast<unsigned char*>(&v), sizeof(v)),
+           sizeof(v));
+diff --git a/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.h b/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.h
+--- a/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.h
++++ b/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.h
+@@ -274,11 +274,11 @@
+   // weight is scaled by (its parent's weight / the sum of weights of the node
+   // and its siblings). This makes the weight of a parent equal to the sum of
+   // its children.
+-  S2DensityTree Normalize(S2Error* absl_nonnull error) const;
++  S2DensityTree Normalize(S2Error* ABSL_NONNULL error) const;
+ 
+   // Returns an S2CellUnion containing the leaves of this tree.  The cell union
+   // is not necessarily normalized.
+-  S2CellUnion Leaves(S2Error* absl_nonnull error) const;
++  S2CellUnion Leaves(S2Error* ABSL_NONNULL error) const;
+ 
+   // Given an input S2DensityTree, returns a "dilated" tree, i.e. a new
+   // density tree that has weight in all areas within the given distance
+@@ -303,7 +303,7 @@
+   // required for dilation, and instead adds neighbors to nodes in the tree
+   // that are at the dilation cell level.
+   static S2DensityTree Dilate(const S2DensityTree& tree, S1Angle radius,
+-                              int max_level_diff, S2Error* absl_nonnull error);
++                              int max_level_diff, S2Error* ABSL_NONNULL error);
+ 
+   // The decoded weight and offsets of encoded cells.
+   class Cell {
+diff --git a/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.cc b/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.cc
+--- a/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.cc
++++ b/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.cc
+@@ -911,9 +911,9 @@
+   last_ = cell_id.parent(level - 1);
+   return cell;
+ }
+ 
+-S2DensityTree S2DensityTree::Normalize(S2Error* absl_nonnull error) const {
++S2DensityTree S2DensityTree::Normalize(S2Error* ABSL_NONNULL error) const {
+   *error = S2Error::Ok();
+ 
+   DecodedPath path(this);
+ 
+@@ -949,8 +949,8 @@
+   S2DensityTree tree;
+   encoder.Build(&tree);
+   return tree;
+ }
+ 
+-S2CellUnion S2DensityTree::Leaves(S2Error* absl_nonnull error) const {
++S2CellUnion S2DensityTree::Leaves(S2Error* ABSL_NONNULL error) const {
+   std::vector<S2CellId> leaves;
+ 
+@@ -969,9 +969,9 @@
+ 
+ S2DensityTree S2DensityTree::Dilate(const S2DensityTree& tree, S1Angle radius,
+                                     int max_level_diff,
+-                                    S2Error* absl_nonnull error) {
++                                    S2Error* ABSL_NONNULL error) {
+   ABSL_DCHECK(error != nullptr) << "error must be non-nullptr";
+   *error = S2Error::Ok();
+ 
+   // Get the leaves of the density tree as an S2CellUnion.
+   S2CellUnion leaves = tree.Leaves(error);
+diff --git a/c/sedona-s2geography/s2geometry/src/s2/s2edge_tessellator.h b/c/sedona-s2geography/s2geometry/src/s2/s2edge_tessellator.h
+--- a/c/sedona-s2geography/s2geometry/src/s2/s2edge_tessellator.h
++++ b/c/sedona-s2geography/s2geometry/src/s2/s2edge_tessellator.h
+@@ -45,6 +45,6 @@
+   // AppendProjected   | S2 geodesics           | Planar projected edges
+   // AppendUnprojected | Planar projected edges | S2 geodesics
+-  S2EdgeTessellator(const S2::Projection* absl_nonnull projection,
++  S2EdgeTessellator(const S2::Projection* ABSL_NONNULL projection,
+                     S1Angle tolerance);
+ 
+   // Converts the spherical geodesic edge AB to a chain of planar edges in the
+@@ -95,8 +95,8 @@
+   void AppendProjected(const R2Point& pa, const S2Point& a,
+                        const R2Point& pb, const S2Point& b,
+                        std::vector<R2Point>* vertices) const;
+ 
+-  const S2::Projection* absl_nonnull proj_;
++  const S2::Projection* ABSL_NONNULL proj_;
+ 
+   // The given tolerance scaled by a constant fraction so that it can be
+   // compared against the result returned by EstimateMaxError().
+diff --git a/c/sedona-s2geography/s2geography/src/s2geography/geoarrow-geography_util.h b/c/sedona-s2geography/s2geography/src/s2geography/geoarrow-geography_util.h
+--- a/c/sedona-s2geography/s2geography/src/s2geography/geoarrow-geography_util.h
++++ b/c/sedona-s2geography/s2geography/src/s2geography/geoarrow-geography_util.h
+@@ -4,6 +4,7 @@
+ #include <absl/numeric/bits.h>
+ #include <s2/s2latlng.h>
+ #include <s2/s2shape.h>
++#include <s2/util/endian/endian.h>
+ 
+ #include <cmath>
+ #include <cstdint>
+@@ -97,11 +98,11 @@
+     uint64_t tmp;
+     for (int64_t i = 0; i < n; ++i) {
+       memcpy(&tmp, lngs, sizeof(double));
+-      tmp = absl::byteswap(tmp);
++      tmp = s2endian::byteswap(tmp);
+       memcpy(&lng, &tmp, sizeof(double));
+ 
+       memcpy(&tmp, lats, sizeof(double));
+-      tmp = absl::byteswap(tmp);
++      tmp = s2endian::byteswap(tmp);
+       memcpy(&lat, &tmp, sizeof(double));
+       if (!visit(lng, lat)) return false;
+ 
+@@ -248,17 +249,17 @@
+     uint64_t tmp;
+     for (int64_t i = 0; i < n; ++i) {
+       memcpy(&tmp, lngs, sizeof(double));
+-      tmp = absl::byteswap(tmp);
++      tmp = s2endian::byteswap(tmp);
+       memcpy(&v.lng, &tmp, sizeof(double));
+ 
+       memcpy(&tmp, lats, sizeof(double));
+-      tmp = absl::byteswap(tmp);
++      tmp = s2endian::byteswap(tmp);
+       memcpy(&v.lat, &tmp, sizeof(double));
+ 
+       memcpy(&tmp, zm0s, sizeof(double));
+-      tmp = absl::byteswap(tmp);
++      tmp = s2endian::byteswap(tmp);
+       memcpy(&v.zm[0], &tmp, sizeof(double));
+ 
+       memcpy(&tmp, zm1s, sizeof(double));
+-      tmp = absl::byteswap(tmp);
++      tmp = s2endian::byteswap(tmp);
+       memcpy(&v.zm[1], &tmp, sizeof(double));
+ 
+       if (!visit(v)) return false;

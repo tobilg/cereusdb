@@ -1,5 +1,5 @@
 diff --git a/c/sedona-geos/src/lib.rs b/c/sedona-geos/src/lib.rs
-index d05367d0..166b654a 100644
+index 44f0179c..d1d97fac 100644
 --- a/c/sedona-geos/src/lib.rs
 +++ b/c/sedona-geos/src/lib.rs
 @@ -26,6 +26,7 @@ mod st_area;
@@ -19,12 +19,12 @@ index d05367d0..166b654a 100644
 +mod st_max_distance;
  mod st_minimumclearance;
  mod st_minimumclearance_line;
- mod st_nrings;
+ mod st_normalize;
 diff --git a/c/sedona-geos/src/register.rs b/c/sedona-geos/src/register.rs
-index 83d90e15..49f15028 100644
+index 3d85b613..89f8fa36 100644
 --- a/c/sedona-geos/src/register.rs
 +++ b/c/sedona-geos/src/register.rs
-@@ -44,6 +44,7 @@ pub fn scalar_kernels() -> Vec<(&'static str, Vec<ScalarKernelRef>)> {
+@@ -43,6 +43,7 @@ pub fn scalar_kernels() -> Vec<(&'static str, Vec<ScalarKernelRef>)> {
          "st_buffer" => crate::st_buffer::st_buffer_impl,
          "st_buffer" => crate::st_buffer::st_buffer_style_impl,
          "st_centroid" => crate::st_centroid::st_centroid_impl,
@@ -32,7 +32,7 @@ index 83d90e15..49f15028 100644
          "st_concavehull" => crate::st_concavehull::st_concave_hull_allow_holes_impl,
          "st_concavehull" => crate::st_concavehull::st_concave_hull_impl,
          "st_contains" => crate::binary_predicates::st_contains_impl,
-@@ -64,7 +65,9 @@ pub fn scalar_kernels() -> Vec<(&'static str, Vec<ScalarKernelRef>)> {
+@@ -67,7 +68,9 @@ pub fn scalar_kernels() -> Vec<(&'static str, Vec<ScalarKernelRef>)> {
          "st_isvalidreason" => crate::st_isvalidreason::st_is_valid_reason_impl,
          "st_length" => crate::st_length::st_length_impl,
          "st_linemerge" => crate::st_line_merge::st_line_merge_impl,
@@ -41,7 +41,7 @@ index 83d90e15..49f15028 100644
 +        "st_maxdistance" => crate::st_max_distance::st_max_distance_impl,
          "st_minimumclearance" => crate::st_minimumclearance::st_minimum_clearance_impl,
          "st_minimumclearanceline" => crate::st_minimumclearance_line::st_minimum_clearance_line_impl,
-         "st_nrings" => crate::st_nrings::st_nrings_impl,
+         "st_normalize" => crate::st_normalize::st_normalize_impl,
 diff --git a/c/sedona-geos/src/st_closest_point.rs b/c/sedona-geos/src/st_closest_point.rs
 new file mode 100644
 index 00000000..a6c33562

@@ -24,9 +24,14 @@ Included function families:
 
 Not included in this package:
 
+- Browser object stores for ranged remote Parquet reads and S3/GCS/Azure/HTTP providers
 - `ST_Transform`
 - S2 geography kernels
 - Raster `RS_*` functions
+
+## Object storage support
+
+Browser object stores are not included in `@cereusdb/minimal`. Use `@cereusdb/standard`, `@cereusdb/global`, or `@cereusdb/full` when you need `registerObjectStores()` and `registerParquetTable()`.
 
 ## JS / TS API
 
@@ -34,6 +39,10 @@ Exports:
 
 - `CereusDB`
 - `CereusDBOptions`
+- `ObjectStoreRegistryConfig`
+- `ObjectStoreConfig`
+- `ObjectStoreProvider`
+- `RegisterParquetTableOptions`
 - `RasterFormat`
 - `QueryResult`
 
@@ -41,6 +50,7 @@ Main types:
 
 ```ts
 type RasterFormat = 'geotiff' | 'tiff';
+type ObjectStoreProvider = 'http' | 's3' | 'gcs' | 'azure';
 
 interface CereusDBOptions {
   wasmUrl?: string;
@@ -51,6 +61,24 @@ interface CereusDBOptions {
     | BufferSource
     | WebAssembly.Module
     | Promise<Response>;
+  objectStores?: ObjectStoreRegistryConfig;
+}
+
+interface ObjectStoreRegistryConfig {
+  maxConcurrency?: number;
+  stores: ObjectStoreConfig[];
+}
+
+interface ObjectStoreConfig {
+  name?: string;
+  provider: ObjectStoreProvider;
+  url: string;
+  options?: Record<string, string | number | boolean>;
+}
+
+interface RegisterParquetTableOptions {
+  fileExtension?: string;
+  targetPartitions?: number;
 }
 ```
 
@@ -62,6 +90,12 @@ class CereusDB {
   sql(query: string): Promise<Uint8Array>;
   sqlJSON(query: string): Promise<Record<string, unknown>[]>;
   registerRemoteParquet(name: string, url: string): Promise<void>;
+  registerObjectStores(config: ObjectStoreRegistryConfig): void;
+  registerParquetTable(
+    name: string,
+    url: string,
+    options?: RegisterParquetTableOptions,
+  ): Promise<void>;
   registerFile(name: string, file: File): Promise<void>;
   registerGeoJSON(name: string, geojson: string | object): void;
   registerRaster(name: string, data: BufferSource, format: RasterFormat): void;
@@ -77,6 +111,7 @@ API notes:
 - `sql()` returns Arrow IPC bytes as `Uint8Array`.
 - `sqlJSON()` returns parsed JSON rows.
 - `registerFile()` supports `.parquet`, `.geoparquet`, `.geojson`, and `.json` in this package.
+- Browser object-store methods are part of the shared wrapper, but object-store registration requires `@cereusdb/standard`, `@cereusdb/global`, or `@cereusdb/full`.
 - `registerRaster()` and `registerGeoTIFF()` are part of the shared wrapper, but raster registration requires `@cereusdb/full`.
 
 ## Example

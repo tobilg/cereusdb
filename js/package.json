@@ -1,6 +1,6 @@
 {
   "name": "cereusdb-js-internal",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "description": "CereusDB — browser-side spatial SQL powered by Apache SedonaDB",
   "main": "dist/index.js",
@@ -18,12 +18,13 @@
     "package:full": "cd .. && make package-full",
     "test": "npm run test:full",
     "test:minimal": "CEREUSDB_PACKAGE=minimal vitest run tests/core.test.ts tests/ddl.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/knn.test.ts tests/random-geometry.test.ts",
-    "test:standard": "CEREUSDB_PACKAGE=standard vitest run tests/core.test.ts tests/ddl.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/proj.test.ts tests/knn.test.ts tests/random-geometry.test.ts",
-    "test:global": "CEREUSDB_PACKAGE=global vitest run tests/core.test.ts tests/ddl.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/proj.test.ts tests/knn.test.ts tests/random-geometry.test.ts tests/s2.test.ts",
-    "test:full": "CEREUSDB_PACKAGE=full vitest run tests/core.test.ts tests/ddl.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/proj.test.ts tests/knn.test.ts tests/random-geometry.test.ts tests/raster.test.ts tests/s2.test.ts",
+    "test:standard": "CEREUSDB_PACKAGE=standard vitest run tests/core.test.ts tests/ddl.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/proj.test.ts tests/knn.test.ts tests/random-geometry.test.ts tests/browser-object-store.test.ts",
+    "test:global": "CEREUSDB_PACKAGE=global vitest run tests/core.test.ts tests/ddl.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/proj.test.ts tests/knn.test.ts tests/random-geometry.test.ts tests/s2.test.ts tests/browser-object-store.test.ts",
+    "test:full": "CEREUSDB_PACKAGE=full vitest run tests/core.test.ts tests/ddl.test.ts tests/distance-join.test.ts tests/relation-join.test.ts tests/function-catalog.test.ts tests/geography.test.ts tests/proj.test.ts tests/knn.test.ts tests/raster.test.ts tests/s2.test.ts tests/browser-object-store.test.ts",
     "test:geos": "npm run test:minimal",
     "test:geos-proj": "npm run test:standard",
     "test:geos-proj-s2": "npm run test:global",
+    "smoke:object-store-cloud": "CEREUSDB_PACKAGE=standard vitest run tests/browser-object-store-cloud.test.ts",
     "test:watch": "vitest"
   },
   "keywords": [
@@ -43,6 +44,8 @@
     "url": "https://github.com/tobilg/cereusdb"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.1",
+    "@emnapi/runtime": "^1.11.1",
     "@types/node": "^24.9.1",
     "apache-arrow": "^21.1.0",
     "typescript": "^5.9.3",

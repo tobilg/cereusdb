@@ -10,7 +10,8 @@
   "readme": "./README.md",
   "projectDocuments": [
     "./guides/getting-started.md",
-    "./guides/package-selection.md"
+    "./guides/package-selection.md",
+    "./guides/browser-object-stores.md"
   ],
   "includeVersion": false,
   "excludePrivate": true,

@@ -1,0 +1,1103 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 6c8ecc8..aba8ab0 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -49,6 +49,7 @@ base64 = { version = "0.22", default-features = false, features = ["std"], optio
+ form_urlencoded = { version = "1.2", optional = true }
+ http-body-util = { version = "0.1.2", optional = true }
+ httparse = { version = "1.8.0", default-features = false, features = ["std"], optional = true }
++hmac = { version = "0.12", default-features = false, optional = true }
+ hyper = { version = "1.2", default-features = false, optional = true }
+ md-5 = { version = "0.10.6", default-features = false, optional = true }
+ quick-xml = { version = "0.38.0", features = ["serialize", "overlapped-lists"], optional = true }
+@@ -59,6 +60,7 @@ rustls-pemfile = { version = "2.0", default-features = false, features = ["std"]
+ serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
+ serde_json = { version = "1.0", default-features = false, features = ["std"], optional = true }
+ serde_urlencoded = { version = "0.7", optional = true }
++sha2 = { version = "0.10", default-features = false, optional = true }
+ tokio = { version = "1.29.0", features = ["sync", "macros", "rt", "time", "io-util"] }
+ 
+ [target.'cfg(target_family="unix")'.dev-dependencies]
+@@ -70,12 +72,18 @@ wasm-bindgen-futures = "0.4.18"
+ 
+ [features]
+ default = ["fs"]
+-cloud = ["serde", "serde_json", "quick-xml", "hyper", "reqwest", "reqwest/stream", "chrono/serde", "base64", "rand", "ring", "http-body-util", "form_urlencoded", "serde_urlencoded"]
+-azure = ["cloud", "httparse"]
++cloud = ["serde", "serde_json", "quick-xml", "hyper", "chrono/serde", "base64", "rand", "http-body-util", "form_urlencoded", "serde_urlencoded"]
++reqwest = ["dep:reqwest", "reqwest/stream"]
++azure-base = ["cloud", "httparse", "hmac", "sha2"]
++gcp-base = ["cloud", "rustls-pemfile", "sha2"]
++gcp-service-account = ["gcp-base", "ring"]
++aws-base = ["cloud", "md-5", "hmac", "sha2"]
++http-base = ["cloud"]
++azure = ["azure-base", "reqwest"]
+ fs = ["walkdir"]
+-gcp = ["cloud", "rustls-pemfile"]
+-aws = ["cloud", "md-5"]
+-http = ["cloud"]
++gcp = ["gcp-base", "reqwest"]
++aws = ["aws-base", "reqwest"]
++http = ["http-base", "reqwest"]
+ tls-webpki-roots = ["reqwest?/rustls-tls-webpki-roots"]
+ integration = ["rand"]
+ 
+diff --git a/src/aws/builder.rs b/src/aws/builder.rs
+index 6e6f8e2..05aaaff 100644
+--- a/src/aws/builder.rs
++++ b/src/aws/builder.rs
+@@ -31,7 +31,7 @@ use base64::prelude::BASE64_STANDARD;
+ use base64::Engine;
+ use itertools::Itertools;
+ use md5::{Digest, Md5};
+-use reqwest::header::{HeaderMap, HeaderValue};
++use http::header::{HeaderMap, HeaderValue};
+ use serde::{Deserialize, Serialize};
+ use std::str::FromStr;
+ use std::sync::Arc;
+diff --git a/src/aws/client.rs b/src/aws/client.rs
+index 4edb977..00c6049 100644
+--- a/src/aws/client.rs
++++ b/src/aws/client.rs
+@@ -52,9 +52,8 @@ use itertools::Itertools;
+ use md5::{Digest, Md5};
+ use percent_encoding::{utf8_percent_encode, PercentEncode};
+ use quick_xml::events::{self as xml_events};
+-use ring::digest;
+-use ring::digest::Context;
+ use serde::{Deserialize, Serialize};
++use sha2::Sha256;
+ use std::sync::Arc;
+ 
+ const VERSION_HEADER: &str = "x-amz-version-id";
+@@ -295,7 +294,7 @@ pub(crate) struct Request<'a> {
+     path: &'a Path,
+     config: &'a S3Config,
+     builder: HttpRequestBuilder,
+-    payload_sha256: Option<digest::Digest>,
++    payload_sha256: Option<[u8; 32]>,
+     payload: Option<PutPayload>,
+     use_session_creds: bool,
+     idempotent: bool,
+@@ -400,9 +399,9 @@ impl Request<'_> {
+         if (!self.config.skip_signature && self.config.sign_payload)
+             || self.config.checksum.is_some()
+         {
+-            let mut sha256 = Context::new(&digest::SHA256);
++            let mut sha256 = Sha256::new();
+             payload.iter().for_each(|x| sha256.update(x));
+-            let payload_sha256 = sha256.finish();
++            let payload_sha256: [u8; 32] = sha256.finalize().into();
+ 
+             if let Some(Checksum::SHA256) = self.config.checksum {
+                 self.builder = self
+@@ -535,7 +534,7 @@ impl S3Client {
+ 
+         let mut builder = self.client.request(Method::POST, url);
+ 
+-        let digest = digest::digest(&digest::SHA256, &body);
++        let digest: [u8; 32] = Sha256::digest(&body).into();
+         builder = builder.header(SHA256_CHECKSUM, BASE64_STANDARD.encode(digest));
+ 
+         // S3 *requires* DeleteObjects to include a Content-MD5 header:
+diff --git a/src/aws/mod.rs b/src/aws/mod.rs
+index 4abf374..fe4e075 100644
+--- a/src/aws/mod.rs
++++ b/src/aws/mod.rs
+@@ -31,8 +31,8 @@
+ use async_trait::async_trait;
+ use futures::stream::BoxStream;
+ use futures::{StreamExt, TryStreamExt};
+-use reqwest::header::{HeaderName, IF_MATCH, IF_NONE_MATCH};
+-use reqwest::{Method, StatusCode};
++use http::header::{HeaderName, IF_MATCH, IF_NONE_MATCH};
++use http::{Method, StatusCode};
+ use std::{sync::Arc, time::Duration};
+ use url::Url;
+ 
+@@ -59,7 +59,7 @@ mod credential;
+ mod dynamo;
+ mod precondition;
+ 
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ mod resolve;
+ 
+ pub use builder::{AmazonS3Builder, AmazonS3ConfigKey};
+@@ -67,7 +67,7 @@ pub use checksum::Checksum;
+ pub use dynamo::DynamoCommit;
+ pub use precondition::{S3ConditionalPut, S3CopyIfNotExists};
+ 
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ pub use resolve::resolve_bucket_region;
+ 
+ /// This struct is used to maintain the URI path encoding
+diff --git a/src/aws/precondition.rs b/src/aws/precondition.rs
+index 2f11e4f..0ee4a12 100644
+--- a/src/aws/precondition.rs
++++ b/src/aws/precondition.rs
+@@ -45,7 +45,7 @@ pub enum S3CopyIfNotExists {
+     /// other than 412.
+     ///
+     /// Encoded as `header-with-status:<HEADER_NAME>:<HEADER_VALUE>:<STATUS>` ignoring whitespace
+-    HeaderWithStatus(String, String, reqwest::StatusCode),
++    HeaderWithStatus(String, String, http::StatusCode),
+     /// Native Amazon S3 supports copy if not exists through a multipart upload
+     /// where the upload copies an existing object and is completed only if the
+     /// new object does not already exist.
+@@ -213,7 +213,7 @@ mod tests {
+         let expected = Some(S3CopyIfNotExists::HeaderWithStatus(
+             "key".to_owned(),
+             "value".to_owned(),
+-            reqwest::StatusCode::FORBIDDEN,
++            http::StatusCode::FORBIDDEN,
+         ));
+ 
+         assert_eq!(expected, S3CopyIfNotExists::from_str(input));
+@@ -265,7 +265,7 @@ mod tests {
+         let expected = Some(S3CopyIfNotExists::HeaderWithStatus(
+             "key".to_owned(),
+             "value".to_owned(),
+-            reqwest::StatusCode::FORBIDDEN,
++            http::StatusCode::FORBIDDEN,
+         ));
+ 
+         const INPUTS: &[&str] = &[
+diff --git a/src/azure/mod.rs b/src/azure/mod.rs
+index f65bf9f..0844113 100644
+--- a/src/azure/mod.rs
++++ b/src/azure/mod.rs
+@@ -31,7 +31,7 @@ use crate::{
+ };
+ use async_trait::async_trait;
+ use futures::stream::{BoxStream, StreamExt, TryStreamExt};
+-use reqwest::Method;
++use http::Method;
+ use std::fmt::Debug;
+ use std::sync::Arc;
+ use std::time::Duration;
+diff --git a/src/client/builder.rs b/src/client/builder.rs
+index 257cb57..9c98a79 100644
+--- a/src/client/builder.rs
++++ b/src/client/builder.rs
+@@ -63,7 +63,7 @@ impl HttpRequestBuilder {
+         }
+     }
+ 
+-    #[cfg(any(feature = "aws", feature = "azure"))]
++    #[cfg(any(feature = "aws", feature = "aws-base", feature = "azure", feature = "azure-base"))]
+     pub(crate) fn from_parts(client: HttpClient, request: HttpRequest) -> Self {
+         Self {
+             client,
+@@ -116,7 +116,7 @@ impl HttpRequestBuilder {
+         self
+     }
+ 
+-    #[cfg(feature = "aws")]
++    #[cfg(any(feature = "aws", feature = "aws-base"))]
+     pub(crate) fn headers(mut self, headers: http::HeaderMap) -> Self {
+         use http::header::{Entry, OccupiedEntry};
+ 
+@@ -151,7 +151,7 @@ impl HttpRequestBuilder {
+         self
+     }
+ 
+-    #[cfg(feature = "gcp")]
++    #[cfg(any(feature = "gcp", feature = "gcp-base"))]
+     pub(crate) fn bearer_auth(mut self, token: &str) -> Self {
+         let value = HeaderValue::try_from(format!("Bearer {token}"));
+         match (value, &mut self.request) {
+@@ -165,7 +165,7 @@ impl HttpRequestBuilder {
+         self
+     }
+ 
+-    #[cfg(any(feature = "aws", feature = "gcp"))]
++    #[cfg(any(feature = "aws", feature = "aws-base", feature = "gcp", feature = "gcp-base"))]
+     pub(crate) fn json<S: serde::Serialize>(mut self, s: S) -> Self {
+         match (serde_json::to_vec(&s), &mut self.request) {
+             (Ok(json), Ok(request)) => {
+@@ -177,7 +177,15 @@ impl HttpRequestBuilder {
+         self
+     }
+ 
+-    #[cfg(any(test, feature = "aws", feature = "gcp", feature = "azure"))]
++    #[cfg(any(
++        test,
++        feature = "aws",
++        feature = "aws-base",
++        feature = "gcp",
++        feature = "gcp-base",
++        feature = "azure",
++        feature = "azure-base"
++    ))]
+     pub(crate) fn query<T: serde::Serialize + ?Sized>(mut self, query: &T) -> Self {
+         let mut error = None;
+         if let Ok(ref mut req) = self.request {
+@@ -205,7 +213,7 @@ impl HttpRequestBuilder {
+         self
+     }
+ 
+-    #[cfg(any(feature = "gcp", feature = "azure"))]
++    #[cfg(any(feature = "gcp", feature = "gcp-base", feature = "azure", feature = "azure-base"))]
+     pub(crate) fn form<T: serde::Serialize>(mut self, form: T) -> Self {
+         let mut error = None;
+         if let Ok(ref mut req) = self.request {
+@@ -226,7 +234,14 @@ impl HttpRequestBuilder {
+         self
+     }
+ 
+-    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
++    #[cfg(any(
++        feature = "aws",
++        feature = "aws-base",
++        feature = "gcp",
++        feature = "gcp-base",
++        feature = "azure",
++        feature = "azure-base"
++    ))]
+     pub(crate) fn body(mut self, b: impl Into<HttpRequestBody>) -> Self {
+         if let Ok(r) = &mut self.request {
+             *r.body_mut() = b.into();
+@@ -239,7 +254,7 @@ impl HttpRequestBuilder {
+     }
+ }
+ 
+-#[cfg(any(test, feature = "azure"))]
++#[cfg(any(test, feature = "azure", feature = "azure-base"))]
+ pub(crate) fn add_query_pairs<I, K, V>(uri: &mut Uri, query_pairs: I)
+ where
+     I: IntoIterator,
+diff --git a/src/client/get.rs b/src/client/get.rs
+index 51d4e1b..ceb232e 100644
+--- a/src/client/get.rs
++++ b/src/client/get.rs
+@@ -33,7 +33,7 @@ use http::header::{
+ };
+ use http::StatusCode;
+ use http_body_util::BodyExt;
+-use reqwest::header::ToStrError;
++use http::header::ToStrError;
+ use std::ops::Range;
+ use std::sync::Arc;
+ use tracing::info;
+diff --git a/src/client/header.rs b/src/client/header.rs
+index d7e14b3..bb819d6 100644
+--- a/src/client/header.rs
++++ b/src/client/header.rs
+@@ -49,7 +49,7 @@ pub(crate) enum Error {
+     MissingEtag,
+ 
+     #[error("Received header containing non-ASCII data")]
+-    BadHeader { source: reqwest::header::ToStrError },
++    BadHeader { source: http::header::ToStrError },
+ 
+     #[error("Last-Modified Header missing from response")]
+     MissingLastModified,
+@@ -71,7 +71,14 @@ pub(crate) enum Error {
+ }
+ 
+ /// Extracts a PutResult from the provided [`HeaderMap`]
+-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
++#[cfg(any(
++    feature = "aws",
++    feature = "aws-base",
++    feature = "gcp",
++    feature = "gcp-base",
++    feature = "azure",
++    feature = "azure-base"
++))]
+ pub(crate) fn get_put_result(
+     headers: &HeaderMap,
+     version: &str,
+@@ -82,7 +89,14 @@ pub(crate) fn get_put_result(
+ }
+ 
+ /// Extracts a optional version from the provided [`HeaderMap`]
+-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
++#[cfg(any(
++    feature = "aws",
++    feature = "aws-base",
++    feature = "gcp",
++    feature = "gcp-base",
++    feature = "azure",
++    feature = "azure-base"
++))]
+ pub(crate) fn get_version(headers: &HeaderMap, version: &str) -> Result<Option<String>, Error> {
+     Ok(match headers.get(version) {
+         Some(x) => Some(
+diff --git a/src/client/http/body.rs b/src/client/http/body.rs
+index 504bebe..ce54414 100644
+--- a/src/client/http/body.rs
++++ b/src/client/http/body.rs
+@@ -39,7 +39,7 @@ impl HttpRequestBody {
+         Self(Inner::Bytes(Bytes::new()))
+     }
+ 
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+     pub(crate) fn into_reqwest(self) -> reqwest::Body {
+         match self.0 {
+             Inner::Bytes(b) => b.into(),
+@@ -49,7 +49,7 @@ impl HttpRequestBody {
+         }
+     }
+ 
+-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
++    #[cfg(all(feature = "reqwest", target_arch = "wasm32", target_os = "unknown"))]
+     pub(crate) fn into_reqwest(self) -> reqwest::Body {
+         match self.0 {
+             Inner::Bytes(b) => b.into(),
+@@ -196,7 +196,14 @@ impl HttpResponseBody {
+         String::from_utf8(b.into()).map_err(|e| HttpError::new(HttpErrorKind::Decode, e))
+     }
+ 
+-    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
++    #[cfg(any(
++        feature = "aws",
++        feature = "aws-base",
++        feature = "gcp",
++        feature = "gcp-base",
++        feature = "azure",
++        feature = "azure-base"
++    ))]
+     pub(crate) async fn json<B: serde::de::DeserializeOwned>(self) -> Result<B, HttpError> {
+         let b = self.bytes().await?;
+         serde_json::from_slice(&b).map_err(|e| HttpError::new(HttpErrorKind::Decode, e))
+diff --git a/src/client/http/connection.rs b/src/client/http/connection.rs
+index 48b7549..90cdbe8 100644
+--- a/src/client/http/connection.rs
++++ b/src/client/http/connection.rs
+@@ -16,13 +16,17 @@
+ // under the License.
+ 
+ use crate::client::builder::{HttpRequestBuilder, RequestBuilderError};
+-use crate::client::{HttpRequest, HttpResponse, HttpResponseBody};
++use crate::client::{HttpRequest, HttpResponse};
++#[cfg(feature = "reqwest")]
++use crate::client::HttpResponseBody;
+ use crate::ClientOptions;
+ use async_trait::async_trait;
+ use http::{Method, Uri};
++#[cfg(feature = "reqwest")]
+ use http_body_util::BodyExt;
+ use std::error::Error;
+ use std::sync::Arc;
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ use tokio::runtime::Handle;
+ 
+ /// An HTTP protocol error
+@@ -83,6 +87,7 @@ impl HttpError {
+         }
+     }
+ 
++    #[cfg(feature = "reqwest")]
+     pub(crate) fn reqwest(e: reqwest::Error) -> Self {
+         #[cfg(not(target_arch = "wasm32"))]
+         let is_connect = || e.is_connect();
+@@ -208,7 +213,7 @@ impl HttpClient {
+ }
+ 
+ #[async_trait]
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ impl HttpService for reqwest::Client {
+     async fn call(&self, req: HttpRequest) -> Result<HttpResponse, HttpError> {
+         let (parts, body) = req.into_parts();
+@@ -228,7 +233,7 @@ impl HttpService for reqwest::Client {
+ }
+ 
+ #[async_trait]
+-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
++#[cfg(all(feature = "reqwest", target_arch = "wasm32", target_os = "unknown"))]
+ impl HttpService for reqwest::Client {
+     async fn call(&self, req: HttpRequest) -> Result<HttpResponse, HttpError> {
+         use futures::{
+@@ -290,10 +295,16 @@ pub trait HttpConnector: std::fmt::Debug + Send + Sync + 'static {
+ /// [`HttpConnector`] using [`reqwest::Client`]
+ #[derive(Debug, Default)]
+ #[allow(missing_copy_implementations)]
+-#[cfg(not(all(target_arch = "wasm32", target_os = "wasi")))]
++#[cfg(all(
++    feature = "reqwest",
++    not(all(target_arch = "wasm32", target_os = "wasi"))
++))]
+ pub struct ReqwestConnector {}
+ 
+-#[cfg(not(all(target_arch = "wasm32", target_os = "wasi")))]
++#[cfg(all(
++    feature = "reqwest",
++    not(all(target_arch = "wasm32", target_os = "wasi"))
++))]
+ impl HttpConnector for ReqwestConnector {
+     fn connect(&self, options: &ClientOptions) -> crate::Result<HttpClient> {
+         let client = options.client()?;
+@@ -338,12 +349,12 @@ impl HttpConnector for ReqwestConnector {
+ /// ```
+ #[derive(Debug)]
+ #[allow(missing_copy_implementations)]
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ pub struct SpawnedReqwestConnector {
+     runtime: Handle,
+ }
+ 
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ impl SpawnedReqwestConnector {
+     /// Create a new [`SpawnedReqwestConnector`] with the provided [`Handle`] to
+     /// a tokio [`Runtime`]
+@@ -354,7 +365,7 @@ impl SpawnedReqwestConnector {
+     }
+ }
+ 
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ impl HttpConnector for SpawnedReqwestConnector {
+     fn connect(&self, options: &ClientOptions) -> crate::Result<HttpClient> {
+         let spawn_service = super::SpawnService::new(options.client()?, self.runtime.clone());
+@@ -362,21 +373,24 @@ impl HttpConnector for SpawnedReqwestConnector {
+     }
+ }
+ 
+-#[cfg(all(target_arch = "wasm32", target_os = "wasi"))]
++#[cfg(all(feature = "reqwest", target_arch = "wasm32", target_os = "wasi"))]
+ pub(crate) fn http_connector(
+     custom: Option<Arc<dyn HttpConnector>>,
+ ) -> crate::Result<Arc<dyn HttpConnector>> {
+     match custom {
+         Some(x) => Ok(x),
+         None => Err(crate::Error::NotSupported {
+-            source: "WASI architectures must provide an HTTPConnector"
++            source: "reqwest is not supported on the WASI architecture; supply a custom HttpConnector"
+                 .to_string()
+                 .into(),
+         }),
+     }
+ }
+ 
+-#[cfg(not(all(target_arch = "wasm32", target_os = "wasi")))]
++#[cfg(all(
++    feature = "reqwest",
++    not(all(target_arch = "wasm32", target_os = "wasi"))
++))]
+ pub(crate) fn http_connector(
+     custom: Option<Arc<dyn HttpConnector>>,
+ ) -> crate::Result<Arc<dyn HttpConnector>> {
+@@ -385,3 +399,18 @@ pub(crate) fn http_connector(
+         None => Ok(Arc::new(ReqwestConnector {})),
+     }
+ }
++
++#[cfg(not(feature = "reqwest"))]
++pub(crate) fn http_connector(
++    custom: Option<Arc<dyn HttpConnector>>,
++) -> crate::Result<Arc<dyn HttpConnector>> {
++    match custom {
++        Some(x) => Ok(x),
++        None => Err(crate::Error::NotSupported {
++            source:
++                "object_store was built without reqwest; supply a custom HttpConnector or enable the reqwest feature"
++                    .to_string()
++                    .into(),
++        }),
++    }
++}
+diff --git a/src/client/mod.rs b/src/client/mod.rs
+index 5a11b7a..4e0743a 100644
+--- a/src/client/mod.rs
++++ b/src/client/mod.rs
+@@ -15,13 +15,13 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
+-//! Generic utilities for [`reqwest`] based [`ObjectStore`] implementations
++//! Generic utilities for HTTP based [`ObjectStore`] implementations
+ //!
+ //! [`ObjectStore`]: crate::ObjectStore
+ 
+ pub(crate) mod backoff;
+ 
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ mod dns;
+ 
+ #[cfg(not(target_arch = "wasm32"))]
+@@ -30,44 +30,73 @@ pub(crate) mod mock_server;
+ 
+ pub(crate) mod retry;
+ 
+-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
++#[cfg(any(
++    feature = "aws",
++    feature = "aws-base",
++    feature = "gcp",
++    feature = "gcp-base",
++    feature = "azure",
++    feature = "azure-base"
++))]
+ pub(crate) mod pagination;
+ 
+ pub(crate) mod get;
+ 
+-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
++#[cfg(any(
++    feature = "aws",
++    feature = "aws-base",
++    feature = "gcp",
++    feature = "gcp-base",
++    feature = "azure",
++    feature = "azure-base"
++))]
+ pub(crate) mod list;
+ 
+-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
++#[cfg(any(
++    feature = "aws",
++    feature = "aws-base",
++    feature = "gcp",
++    feature = "gcp-base",
++    feature = "azure",
++    feature = "azure-base"
++))]
+ pub(crate) mod token;
+ 
+ pub(crate) mod header;
+ 
+-#[cfg(any(feature = "aws", feature = "gcp"))]
++#[cfg(any(feature = "aws", feature = "aws-base", feature = "gcp", feature = "gcp-base"))]
+ pub(crate) mod s3;
+ 
+ pub(crate) mod builder;
+ mod http;
+ 
+-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
++#[cfg(any(
++    feature = "aws",
++    feature = "aws-base",
++    feature = "gcp",
++    feature = "gcp-base",
++    feature = "azure",
++    feature = "azure-base"
++))]
+ pub(crate) mod parts;
+ pub use http::*;
+ 
+ use async_trait::async_trait;
+-use reqwest::header::{HeaderMap, HeaderValue};
++use ::http::header::{HeaderMap, HeaderValue};
+ use serde::{Deserialize, Serialize};
+ use std::collections::HashMap;
+ use std::str::FromStr;
+ use std::sync::Arc;
+ use std::time::Duration;
+ 
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ use reqwest::{NoProxy, Proxy};
+ 
+ use crate::config::{fmt_duration, ConfigValue};
+ use crate::path::Path;
+ use crate::{GetOptions, Result};
+ 
++#[cfg(feature = "reqwest")]
+ fn map_client_error(e: reqwest::Error) -> super::Error {
+     super::Error::Generic {
+         store: "HTTP client",
+@@ -75,6 +104,7 @@ fn map_client_error(e: reqwest::Error) -> super::Error {
+     }
+ }
+ 
++#[cfg(feature = "reqwest")]
+ static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
+ 
+ /// Configuration keys for [`ClientOptions`]
+@@ -195,10 +225,10 @@ impl FromStr for ClientConfigKey {
+ /// This is used to configure the client to trust a specific certificate. See
+ /// [Self::from_pem] for an example
+ #[derive(Debug, Clone)]
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ pub struct Certificate(reqwest::tls::Certificate);
+ 
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+ impl Certificate {
+     /// Create a `Certificate` from a PEM encoded certificate.
+     ///
+@@ -245,7 +275,7 @@ impl Certificate {
+ #[derive(Debug, Clone)]
+ pub struct ClientOptions {
+     user_agent: Option<ConfigValue<HeaderValue>>,
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+     root_certificates: Vec<Certificate>,
+     content_type_map: HashMap<String, String>,
+     default_content_type: Option<String>,
+@@ -279,7 +309,7 @@ impl Default for ClientOptions {
+         // we opt for a slightly higher default timeout of 30 seconds
+         Self {
+             user_agent: None,
+-            #[cfg(not(target_arch = "wasm32"))]
++            #[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+             root_certificates: Default::default(),
+             content_type_map: Default::default(),
+             default_content_type: None,
+@@ -406,7 +436,7 @@ impl ClientOptions {
+     ///
+     /// This can be used to connect to a server that has a self-signed
+     /// certificate for example.
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+     pub fn with_root_certificate(mut self, certificate: Certificate) -> Self {
+         self.root_certificates.push(certificate);
+         self
+@@ -635,14 +665,21 @@ impl ClientOptions {
+     /// In particular:
+     /// * Allows HTTP as metadata endpoints do not use TLS
+     /// * Configures a low connection timeout to provide quick feedback if not present
+-    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
++    #[cfg(any(
++        feature = "aws",
++        feature = "aws-base",
++        feature = "gcp",
++        feature = "gcp-base",
++        feature = "azure",
++        feature = "azure-base"
++    ))]
+     pub(crate) fn metadata_options(&self) -> Self {
+         self.clone()
+             .with_allow_http(true)
+             .with_connect_timeout(Duration::from_secs(1))
+     }
+ 
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(all(feature = "reqwest", not(target_arch = "wasm32")))]
+     pub(crate) fn client(&self) -> Result<reqwest::Client> {
+         let mut builder = reqwest::ClientBuilder::new();
+ 
+@@ -738,7 +775,7 @@ impl ClientOptions {
+             .map_err(map_client_error)
+     }
+ 
+-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
++    #[cfg(all(feature = "reqwest", target_arch = "wasm32", target_os = "unknown"))]
+     pub(crate) fn client(&self) -> Result<reqwest::Client> {
+         let mut builder = reqwest::ClientBuilder::new();
+ 
+@@ -838,7 +875,14 @@ where
+     }
+ }
+ 
+-#[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
++#[cfg(any(
++    feature = "aws",
++    feature = "aws-base",
++    feature = "azure",
++    feature = "azure-base",
++    feature = "gcp",
++    feature = "gcp-base"
++))]
+ mod cloud {
+     use super::*;
+     use crate::client::token::{TemporaryToken, TokenCache};
+@@ -864,7 +908,7 @@ mod cloud {
+         }
+ 
+         /// Override the minimum remaining TTL for a cached token to be used
+-        #[cfg(any(feature = "aws", feature = "gcp"))]
++        #[cfg(any(feature = "aws", feature = "aws-base", feature = "gcp", feature = "gcp-base"))]
+         pub(crate) fn with_min_ttl(mut self, min_ttl: Duration) -> Self {
+             self.cache = self.cache.with_min_ttl(min_ttl);
+             self
+@@ -895,7 +939,14 @@ mod cloud {
+ }
+ 
+ use crate::client::builder::HttpRequestBuilder;
+-#[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
++#[cfg(any(
++    feature = "aws",
++    feature = "aws-base",
++    feature = "azure",
++    feature = "azure-base",
++    feature = "gcp",
++    feature = "gcp-base"
++))]
+ pub(crate) use cloud::*;
+ 
+ #[cfg(test)]
+diff --git a/src/client/retry.rs b/src/client/retry.rs
+index 2633629..af00d55 100644
+--- a/src/client/retry.rs
++++ b/src/client/retry.rs
+@@ -22,9 +22,8 @@ use crate::client::builder::HttpRequestBuilder;
+ use crate::client::{HttpClient, HttpError, HttpErrorKind, HttpRequest, HttpResponse};
+ use crate::PutPayload;
+ use futures::future::BoxFuture;
+-use http::{Method, Uri};
+-use reqwest::header::LOCATION;
+-use reqwest::StatusCode;
++use http::header::LOCATION;
++use http::{Method, StatusCode, Uri};
+ #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+ use std::time::{Duration, Instant};
+ use tracing::info;
+@@ -276,7 +275,7 @@ impl RetryableRequestBuilder {
+     }
+ 
+     /// Set whether this request should be retried on a 409 Conflict response.
+-    #[cfg(feature = "aws")]
++    #[cfg(any(feature = "aws", feature = "aws-base"))]
+     pub(crate) fn retry_on_conflict(mut self, retry_on_conflict: bool) -> Self {
+         self.request.retry_on_conflict = retry_on_conflict;
+         self
+@@ -512,12 +511,13 @@ mod tests {
+     use crate::client::{HttpClient, HttpResponse};
+     use crate::RetryConfig;
+     use http::StatusCode;
+-    use hyper::header::LOCATION;
++    use http::header::LOCATION;
+     use hyper::server::conn::http1;
+     use hyper::service::service_fn;
+     use hyper::Response;
+     use hyper_util::rt::TokioIo;
+-    use reqwest::{Client, Method};
++    use http::Method;
++    use reqwest::Client;
+     use std::convert::Infallible;
+     use std::error::Error;
+     use std::time::Duration;
+diff --git a/src/client/s3.rs b/src/client/s3.rs
+index a2221fb..7c8e605 100644
+--- a/src/client/s3.rs
++++ b/src/client/s3.rs
+@@ -92,7 +92,7 @@ pub(crate) struct InitiateMultipartUploadResult {
+     pub upload_id: String,
+ }
+ 
+-#[cfg(feature = "aws")]
++#[cfg(any(feature = "aws", feature = "aws-base"))]
+ #[derive(Debug, Deserialize)]
+ #[serde(rename_all = "PascalCase")]
+ pub(crate) struct CopyPartResult {
+diff --git a/src/client/token.rs b/src/client/token.rs
+index 81ffc11..7d384c2 100644
+--- a/src/client/token.rs
++++ b/src/client/token.rs
+@@ -52,7 +52,7 @@ impl<T> Default for TokenCache<T> {
+ 
+ impl<T: Clone + Send> TokenCache<T> {
+     /// Override the minimum remaining TTL for a cached token to be used
+-    #[cfg(any(feature = "aws", feature = "gcp"))]
++    #[cfg(any(feature = "aws", feature = "aws-base", feature = "gcp", feature = "gcp-base"))]
+     pub(crate) fn with_min_ttl(self, min_ttl: Duration) -> Self {
+         Self { min_ttl, ..self }
+     }
+diff --git a/src/config.rs b/src/config.rs
+index 29a389d..e23d216 100644
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -19,7 +19,7 @@ use std::str::FromStr;
+ use std::time::Duration;
+ 
+ use humantime::{format_duration, parse_duration};
+-use reqwest::header::HeaderValue;
++use http::header::HeaderValue;
+ 
+ use crate::{Error, Result};
+ 
+diff --git a/src/gcp/credential.rs b/src/gcp/credential.rs
+index 1e067f5..2fae610 100644
+--- a/src/gcp/credential.rs
++++ b/src/gcp/credential.rs
+@@ -21,7 +21,9 @@ use crate::client::retry::RetryExt;
+ use crate::client::token::TemporaryToken;
+ use crate::client::{HttpClient, HttpError, TokenProvider};
+ use crate::gcp::{GcpSigningCredentialProvider, STORE};
+-use crate::util::{hex_digest, hex_encode, STRICT_ENCODE_SET};
++#[cfg(feature = "gcp-service-account")]
++use crate::util::hex_encode;
++use crate::util::{hex_digest, STRICT_ENCODE_SET};
+ use crate::{RetryConfig, StaticCredentialProvider};
+ use async_trait::async_trait;
+ use base64::prelude::BASE64_URL_SAFE_NO_PAD;
+@@ -31,6 +33,7 @@ use futures::TryFutureExt;
+ use http::{HeaderMap, Method};
+ use itertools::Itertools;
+ use percent_encoding::utf8_percent_encode;
++#[cfg(feature = "gcp-service-account")]
+ use ring::signature::RsaKeyPair;
+ use serde::Deserialize;
+ use std::collections::BTreeMap;
+@@ -68,12 +71,14 @@ pub enum Error {
+     MissingKey,
+ 
+     #[error("Invalid RSA key: {}", source)]
++    #[cfg(feature = "gcp-service-account")]
+     InvalidKey {
+         #[from]
+         source: ring::error::KeyRejected,
+     },
+ 
+     #[error("Error signing: {}", source)]
++    #[cfg(feature = "gcp-service-account")]
+     Sign { source: ring::error::Unspecified },
+ 
+     #[error("Error encoding jwt payload: {}", source)]
+@@ -122,8 +127,15 @@ pub struct GcpSigningCredential {
+ 
+ /// A private RSA key for a service account
+ #[derive(Debug)]
++#[cfg(feature = "gcp-service-account")]
+ pub struct ServiceAccountKey(RsaKeyPair);
+ 
++/// A disabled service account key marker.
++#[derive(Debug, Copy, Clone)]
++#[cfg(not(feature = "gcp-service-account"))]
++pub struct ServiceAccountKey;
++
++#[cfg(feature = "gcp-service-account")]
+ impl ServiceAccountKey {
+     /// Parses a pem-encoded RSA key
+     pub fn from_pem(encoded: &[u8]) -> Result<Self> {
+@@ -168,6 +180,36 @@ impl ServiceAccountKey {
+     }
+ }
+ 
++#[cfg(not(feature = "gcp-service-account"))]
++impl ServiceAccountKey {
++    /// Parses a pem-encoded RSA key.
++    pub fn from_pem(_encoded: &[u8]) -> Result<Self> {
++        Err(service_account_key_unsupported())
++    }
++
++    /// Parses an unencrypted PKCS#8-encoded RSA private key.
++    pub fn from_pkcs8(_key: &[u8]) -> Result<Self> {
++        Err(service_account_key_unsupported())
++    }
++
++    /// Parses an unencrypted PKCS#8-encoded RSA private key.
++    pub fn from_der(_key: &[u8]) -> Result<Self> {
++        Err(service_account_key_unsupported())
++    }
++
++    fn sign(&self, _string_to_sign: &str) -> Result<String> {
++        Err(service_account_key_unsupported())
++    }
++}
++
++#[cfg(not(feature = "gcp-service-account"))]
++fn service_account_key_unsupported() -> Error {
++    Error::UnsupportedKey {
++        encoding: "GCS service account private-key signing requires the gcp-service-account feature"
++            .to_string(),
++    }
++}
++
+ /// A Google Cloud Storage Credential
+ #[derive(Debug, Eq, PartialEq)]
+ pub struct GcpCredential {
+@@ -178,6 +220,7 @@ pub struct GcpCredential {
+ pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
+ 
+ #[derive(Debug, Default, serde::Serialize)]
++#[cfg_attr(not(feature = "gcp-service-account"), allow(dead_code))]
+ pub(crate) struct JwtHeader<'a> {
+     /// The type of JWS: it can only be "JWT" here
+     ///
+@@ -216,6 +259,7 @@ pub(crate) struct JwtHeader<'a> {
+ }
+ 
+ #[derive(serde::Serialize)]
++#[cfg_attr(not(feature = "gcp-service-account"), allow(dead_code))]
+ struct TokenClaims<'a> {
+     iss: &'a str,
+     sub: &'a str,
+@@ -236,6 +280,7 @@ struct TokenResponse {
+ /// # References
+ /// - <https://google.aip.dev/auth/4111>
+ #[derive(Debug)]
++#[cfg_attr(not(feature = "gcp-service-account"), allow(dead_code))]
+ pub(crate) struct SelfSignedJwt {
+     issuer: String,
+     scope: String,
+@@ -270,6 +315,14 @@ impl TokenProvider for SelfSignedJwt {
+         _client: &HttpClient,
+         _retry: &RetryConfig,
+     ) -> crate::Result<TemporaryToken<Arc<GcpCredential>>> {
++        #[cfg(not(feature = "gcp-service-account"))]
++        {
++            let _ = self;
++            return Err(service_account_key_unsupported().into());
++        }
++
++        #[cfg(feature = "gcp-service-account")]
++        {
+         let now = seconds_since_epoch();
+         let exp = now + 3600;
+ 
+@@ -308,6 +361,7 @@ impl TokenProvider for SelfSignedJwt {
+             token: Arc::new(GcpCredential { bearer }),
+             expiry: Some(Instant::now() + Duration::from_secs(3600)),
+         })
++        }
+     }
+ }
+ 
+@@ -383,6 +437,7 @@ impl ServiceAccountCredentials {
+ }
+ 
+ /// Returns the number of seconds since unix epoch
++#[cfg_attr(not(feature = "gcp-service-account"), allow(dead_code))]
+ fn seconds_since_epoch() -> u64 {
+     std::time::SystemTime::now()
+         .duration_since(std::time::SystemTime::UNIX_EPOCH)
+@@ -390,6 +445,7 @@ fn seconds_since_epoch() -> u64 {
+         .as_secs()
+ }
+ 
++#[cfg_attr(not(feature = "gcp-service-account"), allow(dead_code))]
+ fn b64_encode_obj<T: serde::Serialize>(obj: &T) -> Result<String> {
+     let string = serde_json::to_string(obj).map_err(|source| Error::Encode { source })?;
+     Ok(BASE64_URL_SAFE_NO_PAD.encode(string))
+diff --git a/src/http/client.rs b/src/http/client.rs
+index d08e9fa..8cd7e4b 100644
+--- a/src/http/client.rs
++++ b/src/http/client.rs
+@@ -31,7 +31,7 @@ use http::header::{
+     CONTENT_TYPE,
+ };
+ use percent_encoding::percent_decode_str;
+-use reqwest::{Method, StatusCode};
++use http::{Method, StatusCode};
+ use serde::Deserialize;
+ use url::Url;
+ 
+diff --git a/src/lib.rs b/src/lib.rs
+index 53c3ade..eadeb10 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -506,17 +506,17 @@
+ //!
+ //! [`HttpConnector`]: client::HttpConnector
+ 
+-#[cfg(feature = "aws")]
++#[cfg(any(feature = "aws", feature = "aws-base"))]
+ pub mod aws;
+-#[cfg(feature = "azure")]
++#[cfg(any(feature = "azure", feature = "azure-base"))]
+ pub mod azure;
+ pub mod buffered;
+ #[cfg(not(target_arch = "wasm32"))]
+ pub mod chunked;
+ pub mod delimited;
+-#[cfg(feature = "gcp")]
++#[cfg(any(feature = "gcp", feature = "gcp-base"))]
+ pub mod gcp;
+-#[cfg(feature = "http")]
++#[cfg(any(feature = "http", feature = "http-base"))]
+ pub mod http;
+ pub mod limit;
+ #[cfg(all(feature = "fs", not(target_arch = "wasm32")))]
+@@ -538,7 +538,7 @@ pub use client::{
+     StaticCredentialProvider,
+ };
+ 
+-#[cfg(all(feature = "cloud", not(target_arch = "wasm32")))]
++#[cfg(all(feature = "cloud", feature = "reqwest", not(target_arch = "wasm32")))]
+ pub use client::Certificate;
+ 
+ #[cfg(feature = "cloud")]
+diff --git a/src/parse.rs b/src/parse.rs
+index b1f653c..1d6666c 100644
+--- a/src/parse.rs
++++ b/src/parse.rs
+@@ -138,7 +138,7 @@ impl ObjectStoreScheme {
+     }
+ }
+ 
+-#[cfg(feature = "cloud")]
++#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+ macro_rules! builder_opts {
+     ($builder:ty, $url:expr, $options:expr) => {{
+         let builder = $options.into_iter().fold(
+diff --git a/src/signer.rs b/src/signer.rs
+index da55c68..eddb465 100644
+--- a/src/signer.rs
++++ b/src/signer.rs
+@@ -19,7 +19,7 @@
+ 
+ use crate::{path::Path, Result};
+ use async_trait::async_trait;
+-use reqwest::Method;
++use http::Method;
+ use std::{fmt, time::Duration};
+ use url::Url;
+ 
+diff --git a/src/util.rs b/src/util.rs
+index 4f297d9..6811ce8 100644
+--- a/src/util.rs
++++ b/src/util.rs
+@@ -25,11 +25,11 @@ use super::Result;
+ use bytes::Bytes;
+ use futures::{stream::StreamExt, Stream, TryStreamExt};
+ 
+-#[cfg(any(feature = "azure", feature = "http"))]
++#[cfg(any(feature = "azure", feature = "azure-base", feature = "http", feature = "http-base"))]
+ pub(crate) static RFC1123_FMT: &str = "%a, %d %h %Y %T GMT";
+ 
+ // deserialize dates according to rfc1123
+-#[cfg(any(feature = "azure", feature = "http"))]
++#[cfg(any(feature = "azure", feature = "azure-base", feature = "http", feature = "http-base"))]
+ pub(crate) fn deserialize_rfc1123<'de, D>(
+     deserializer: D,
+ ) -> Result<chrono::DateTime<chrono::Utc>, D::Error>
+@@ -42,10 +42,15 @@ where
+     Ok(chrono::TimeZone::from_utc_datetime(&chrono::Utc, &naive))
+ }
+ 
+-#[cfg(any(feature = "aws", feature = "azure"))]
+-pub(crate) fn hmac_sha256(secret: impl AsRef<[u8]>, bytes: impl AsRef<[u8]>) -> ring::hmac::Tag {
+-    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret.as_ref());
+-    ring::hmac::sign(&key, bytes.as_ref())
++#[cfg(any(feature = "aws", feature = "aws-base", feature = "azure", feature = "azure-base"))]
++pub(crate) fn hmac_sha256(secret: impl AsRef<[u8]>, bytes: impl AsRef<[u8]>) -> [u8; 32] {
++    use hmac::{Hmac, Mac};
++    use sha2::Sha256;
++
++    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_ref())
++        .expect("HMAC accepts keys of any size");
++    mac.update(bytes.as_ref());
++    mac.finalize().into_bytes().into()
+ }
+ 
+ /// Collect a stream into [`Bytes`] avoiding copying in the event of a single chunk
+@@ -300,7 +305,7 @@ impl<T: RangeBounds<u64>> From<T> for GetRange {
+ //
+ // Do not URI-encode any of the unreserved characters that RFC 3986 defines:
+ // A-Z, a-z, 0-9, hyphen ( - ), underscore ( _ ), period ( . ), and tilde ( ~ ).
+-#[cfg(any(feature = "aws", feature = "gcp"))]
++#[cfg(any(feature = "aws", feature = "aws-base", feature = "gcp", feature = "gcp-base"))]
+ pub(crate) const STRICT_ENCODE_SET: percent_encoding::AsciiSet = percent_encoding::NON_ALPHANUMERIC
+     .remove(b'-')
+     .remove(b'.')
+@@ -308,14 +313,16 @@ pub(crate) const STRICT_ENCODE_SET: percent_encoding::AsciiSet = percent_encodin
+     .remove(b'~');
+ 
+ /// Computes the SHA256 digest of `body` returned as a hex encoded string
+-#[cfg(any(feature = "aws", feature = "gcp"))]
++#[cfg(any(feature = "aws", feature = "aws-base", feature = "gcp", feature = "gcp-base"))]
+ pub(crate) fn hex_digest(bytes: &[u8]) -> String {
+-    let digest = ring::digest::digest(&ring::digest::SHA256, bytes);
++    use sha2::{Digest, Sha256};
++
++    let digest = Sha256::digest(bytes);
+     hex_encode(digest.as_ref())
+ }
+ 
+ /// Returns `bytes` as a lower-case hex encoded string
+-#[cfg(any(feature = "aws", feature = "gcp"))]
++#[cfg(any(feature = "aws", feature = "aws-base", feature = "gcp", feature = "gcp-base"))]
+ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+     use std::fmt::Write;
+     let mut out = String::with_capacity(bytes.len() * 2);

@@ -64,7 +64,7 @@ deps-init:
 	git submodule update --init --recursive
 
 deps-absorb:
-	git submodule absorbgitdirs deps/sedona-db deps/geos deps/proj deps/gdal deps/expat deps/zlib deps/georust-geos deps/georust-proj deps/georust-gdal deps/sqlite-src
+	git submodule absorbgitdirs deps/sedona-db deps/object-store deps/geos deps/proj deps/gdal deps/expat deps/zlib deps/georust-geos deps/georust-proj deps/georust-gdal deps/sqlite-src
 
 prepare-sources:
 	bash scripts/prepare-patched-sources.sh

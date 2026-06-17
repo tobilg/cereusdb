@@ -49,9 +49,7 @@ prepare_crate() {
         tmp_dir="$(mktemp -d)"
         local archive="$tmp_dir/$name-$version.crate"
         echo "Downloading cached source fallback: $name-$version"
-        curl -L --fail --silent --show-error \
-            "https://crates.io/api/v1/crates/$name/$version/download" \
-            -o "$archive"
+        download_crate_archive "$name" "$version" "$archive"
         tar -xzf "$archive" -C "$tmp_dir"
         src="$tmp_dir/$name-$version"
     fi
@@ -76,6 +74,33 @@ prepare_crate() {
             rm -rf "$dest/.git"
         fi
     fi
+}
+
+download_crate_archive() {
+    local name="$1"
+    local version="$2"
+    local archive="$3"
+    local user_agent="cereusdb-source-prepare/$(basename "$ROOT_DIR")"
+    local static_url="https://static.crates.io/crates/$name/$name-$version.crate"
+    local api_url="https://crates.io/api/v1/crates/$name/$version/download"
+    local curl_args=(
+        -L
+        --fail
+        --silent
+        --show-error
+        --retry 3
+        --retry-delay 2
+        --retry-all-errors
+        --user-agent "$user_agent"
+    )
+
+    if curl "${curl_args[@]}" "$static_url" -o "$archive"; then
+        return
+    fi
+
+    rm -f "$archive"
+    echo "Static crates.io download failed, retrying crates.io API: $name-$version"
+    curl "${curl_args[@]}" "$api_url" -o "$archive"
 }
 
 copy_tree_if_present() {

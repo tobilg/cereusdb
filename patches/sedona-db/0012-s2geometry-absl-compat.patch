@@ -177,85 +177,32 @@ diff --git a/c/sedona-s2geography/s2geometry/src/s2/util/math/exactfloat/exactfl
 diff --git a/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.h b/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.h
 --- a/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.h
 +++ b/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.h
-@@ -274,11 +274,11 @@
-   // weight is scaled by (its parent's weight / the sum of weights of the node
-   // and its siblings). This makes the weight of a parent equal to the sum of
-   // its children.
--  S2DensityTree Normalize(S2Error* absl_nonnull error) const;
-+  S2DensityTree Normalize(S2Error* ABSL_NONNULL error) const;
+@@ -41,6 +41,10 @@
+ #include "s2/s2shape.h"
+ #include "s2/s2shape_index.h"
+ #include "s2/s2shape_index_region.h"
  
-   // Returns an S2CellUnion containing the leaves of this tree.  The cell union
-   // is not necessarily normalized.
--  S2CellUnion Leaves(S2Error* absl_nonnull error) const;
-+  S2CellUnion Leaves(S2Error* ABSL_NONNULL error) const;
- 
-   // Given an input S2DensityTree, returns a "dilated" tree, i.e. a new
-   // density tree that has weight in all areas within the given distance
-@@ -303,7 +303,7 @@
-   // required for dilation, and instead adds neighbors to nodes in the tree
-   // that are at the dilation cell level.
-   static S2DensityTree Dilate(const S2DensityTree& tree, S1Angle radius,
--                              int max_level_diff, S2Error* absl_nonnull error);
-+                              int max_level_diff, S2Error* ABSL_NONNULL error);
- 
-   // The decoded weight and offsets of encoded cells.
-   class Cell {
-diff --git a/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.cc b/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.cc
---- a/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.cc
-+++ b/c/sedona-s2geography/s2geometry/src/s2/s2density_tree.cc
-@@ -911,9 +911,9 @@
-   last_ = cell_id.parent(level - 1);
-   return cell;
- }
- 
--S2DensityTree S2DensityTree::Normalize(S2Error* absl_nonnull error) const {
-+S2DensityTree S2DensityTree::Normalize(S2Error* ABSL_NONNULL error) const {
-   *error = S2Error::Ok();
- 
-   DecodedPath path(this);
- 
-@@ -949,8 +949,8 @@
-   S2DensityTree tree;
-   encoder.Build(&tree);
-   return tree;
- }
- 
--S2CellUnion S2DensityTree::Leaves(S2Error* absl_nonnull error) const {
-+S2CellUnion S2DensityTree::Leaves(S2Error* ABSL_NONNULL error) const {
-   std::vector<S2CellId> leaves;
- 
-@@ -969,9 +969,9 @@
- 
- S2DensityTree S2DensityTree::Dilate(const S2DensityTree& tree, S1Angle radius,
-                                     int max_level_diff,
--                                    S2Error* absl_nonnull error) {
-+                                    S2Error* ABSL_NONNULL error) {
-   ABSL_DCHECK(error != nullptr) << "error must be non-nullptr";
-   *error = S2Error::Ok();
- 
-   // Get the leaves of the density tree as an S2CellUnion.
-   S2CellUnion leaves = tree.Leaves(error);
++#ifndef absl_nonnull
++#define absl_nonnull
++#endif
++
+ // A density tree is a kind of spatial histogram, computed over a collection of
+ // shapes in an S2ShapeIndex.  It's most often used to do spatial clustering
+ // into equal-size shards, where spatial datasets are well-known for their skew,
 diff --git a/c/sedona-s2geography/s2geometry/src/s2/s2edge_tessellator.h b/c/sedona-s2geography/s2geometry/src/s2/s2edge_tessellator.h
 --- a/c/sedona-s2geography/s2geometry/src/s2/s2edge_tessellator.h
 +++ b/c/sedona-s2geography/s2geometry/src/s2/s2edge_tessellator.h
-@@ -45,6 +45,6 @@
-   // AppendProjected   | S2 geodesics           | Planar projected edges
-   // AppendUnprojected | Planar projected edges | S2 geodesics
--  S2EdgeTessellator(const S2::Projection* absl_nonnull projection,
-+  S2EdgeTessellator(const S2::Projection* ABSL_NONNULL projection,
-                     S1Angle tolerance);
+@@ -28,6 +28,10 @@
+ #include "s2/s2point.h"
+ #include "s2/s2projections.h"
  
-   // Converts the spherical geodesic edge AB to a chain of planar edges in the
-@@ -95,8 +95,8 @@
-   void AppendProjected(const R2Point& pa, const S2Point& a,
-                        const R2Point& pb, const S2Point& b,
-                        std::vector<R2Point>* vertices) const;
- 
--  const S2::Projection* absl_nonnull proj_;
-+  const S2::Projection* ABSL_NONNULL proj_;
- 
-   // The given tolerance scaled by a constant fraction so that it can be
-   // compared against the result returned by EstimateMaxError().
++#ifndef absl_nonnull
++#define absl_nonnull
++#endif
++
+ // Given an edge in some 2D projection (e.g., Mercator), S2EdgeTessellator
+ // converts the edge into a chain of spherical geodesic edges such that the
+ // maximum distance between the original edge and the geodesic edge chain is
 diff --git a/c/sedona-s2geography/s2geography/src/s2geography/geoarrow-geography_util.h b/c/sedona-s2geography/s2geography/src/s2geography/geoarrow-geography_util.h
 --- a/c/sedona-s2geography/s2geography/src/s2geography/geoarrow-geography_util.h
 +++ b/c/sedona-s2geography/s2geography/src/s2geography/geoarrow-geography_util.h

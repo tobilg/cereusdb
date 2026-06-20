@@ -1,8 +1,8 @@
 [package]
 name = "cereusdb"
-version = "0.1.1"
-edition = "2021"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 description = "CereusDB - browser-side spatial SQL powered by Apache SedonaDB"
 
 [lib]

@@ -26,6 +26,9 @@ const LOCKFILE_UPDATES = [
     path: resolve(REPO_ROOT, 'js', 'package-lock.json'),
   },
   {
+    path: resolve(REPO_ROOT, 'packages', 'playground', 'package-lock.json'),
+  },
+  {
     path: resolve(REPO_ROOT, 'packages', 'simple-html', 'package-lock.json'),
     update(lockfile, version) {
       lockfile.packages ??= {};

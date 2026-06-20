@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -42,6 +42,17 @@ await copyFile(sourceTypesPath, resolve(packageDistDir, 'index.d.ts'));
 
 for (const filename of WASM_FILES) {
   await copyFile(resolve(wasmSourceDir, filename), resolve(packageWasmDir, filename));
+}
+
+try {
+  await cp(resolve(wasmSourceDir, 'snippets'), resolve(packageWasmDir, 'snippets'), {
+    recursive: true,
+    force: true,
+  });
+} catch (error) {
+  if (error?.code !== 'ENOENT') {
+    throw error;
+  }
 }
 
 console.log(`Packaged @cereusdb/${variant} from dist/${variant}`);

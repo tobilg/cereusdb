@@ -1,39 +1,36 @@
 diff --git a/rust/sedona-functions/src/lib.rs b/rust/sedona-functions/src/lib.rs
-index ba8a3d9c..9186f215 100644
+index 71d86ed..5ce240d 100644
 --- a/rust/sedona-functions/src/lib.rs
 +++ b/rust/sedona-functions/src/lib.rs
-@@ -32,6 +32,8 @@ mod st_dimension;
+@@ -33,6 +33,7 @@ mod st_dimension;
  mod st_dump;
  pub mod st_envelope;
  pub mod st_envelope_agg;
 +mod st_expand;
-+mod st_exteriorring;
  mod st_flipcoordinates;
  mod st_force_dim;
  mod st_geography_cast;
-@@ -48,6 +50,7 @@ mod st_iscollection;
- mod st_isempty;
+@@ -49,6 +50,7 @@ mod st_isempty;
  mod st_knn;
  mod st_linesubstring;
  mod st_makeline;
 +mod st_makeenvelope;
+ mod st_max_distance;
  mod st_numgeometries;
  mod st_point;
- mod st_pointn;
 diff --git a/rust/sedona-functions/src/register.rs b/rust/sedona-functions/src/register.rs
-index 1071d8f8..f34a4c06 100644
+index bc124b8..221bf05 100644
 --- a/rust/sedona-functions/src/register.rs
 +++ b/rust/sedona-functions/src/register.rs
-@@ -49,6 +49,8 @@ pub fn default_function_set() -> FunctionSet {
+@@ -49,6 +49,7 @@ pub fn default_function_set() -> FunctionSet {
          crate::st_dimension::st_dimension_udf,
          crate::st_dump::st_dump_udf,
          crate::st_envelope::st_envelope_udf,
 +        crate::st_expand::st_expand_udf,
-+        crate::st_exteriorring::st_exteriorring_udf,
          crate::st_flipcoordinates::st_flipcoordinates_udf,
          crate::st_force_dim::st_force2d_udf,
          crate::st_force_dim::st_force3d_udf,
-@@ -75,6 +77,7 @@ pub fn default_function_set() -> FunctionSet {
+@@ -82,6 +83,7 @@ pub fn default_function_set() -> FunctionSet {
          crate::st_isempty::st_isempty_udf,
          crate::st_knn::st_knn_udf,
          crate::st_makeline::st_makeline_udf,
@@ -325,118 +322,6 @@ index 0000000..c792e55
 +
 +    Ok(())
 +}
-diff --git a/rust/sedona-functions/src/st_exteriorring.rs b/rust/sedona-functions/src/st_exteriorring.rs
-new file mode 100644
-index 0000000..49e4ab3
---- /dev/null
-+++ b/rust/sedona-functions/src/st_exteriorring.rs
-@@ -0,0 +1,106 @@
-+// Licensed to the Apache Software Foundation (ASF) under one
-+// or more contributor license agreements.  See the NOTICE file
-+// distributed with this work for additional information
-+// regarding copyright ownership.  The ASF licenses this file
-+// to you under the Apache License, Version 2.0 (the
-+// "License"); you may not use this file except in compliance
-+// with the License.  You may obtain a copy of the License at
-+//
-+//   http://www.apache.org/licenses/LICENSE-2.0
-+//
-+// Unless required by applicable law or agreed to in writing,
-+// software distributed under the License is distributed on an
-+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-+// KIND, either express or implied.  See the License for the
-+// specific language governing permissions and limitations
-+// under the License.
-+use std::sync::Arc;
-+
-+use arrow_array::builder::BinaryBuilder;
-+use datafusion_common::{error::Result, DataFusionError};
-+use datafusion_expr::{ColumnarValue, Volatility};
-+use geo_traits::{GeometryTrait, LineStringTrait, PolygonTrait};
-+use sedona_expr::{
-+    item_crs::ItemCrsKernel,
-+    scalar_udf::{SedonaScalarKernel, SedonaScalarUDF},
-+};
-+use sedona_geometry::wkb_factory::{
-+    write_wkb_coord_trait, write_wkb_linestring_header, WKB_MIN_PROBABLE_BYTES,
-+};
-+use sedona_schema::{
-+    datatypes::{SedonaType, WKB_GEOMETRY},
-+    matchers::ArgMatcher,
-+};
-+use wkb::reader::Wkb;
-+
-+use crate::executor::WkbExecutor;
-+
-+/// ST_ExteriorRing() scalar UDF
-+///
-+/// Returns the exterior ring of a polygon as a LINESTRING.
-+pub fn st_exteriorring_udf() -> SedonaScalarUDF {
-+    SedonaScalarUDF::new(
-+        "st_exteriorring",
-+        ItemCrsKernel::wrap_impl(vec![Arc::new(STExteriorRing {})]),
-+        Volatility::Immutable,
-+    )
-+}
-+
-+#[derive(Debug)]
-+struct STExteriorRing {}
-+
-+impl SedonaScalarKernel for STExteriorRing {
-+    fn return_type(&self, args: &[SedonaType]) -> Result<Option<SedonaType>> {
-+        let matcher = ArgMatcher::new(vec![ArgMatcher::is_geometry()], WKB_GEOMETRY);
-+        matcher.match_args(args)
-+    }
-+
-+    fn invoke_batch(
-+        &self,
-+        arg_types: &[SedonaType],
-+        args: &[ColumnarValue],
-+    ) -> Result<ColumnarValue> {
-+        let executor = WkbExecutor::new(arg_types, args);
-+        let mut builder = BinaryBuilder::with_capacity(
-+            executor.num_iterations(),
-+            WKB_MIN_PROBABLE_BYTES * executor.num_iterations(),
-+        );
-+
-+        executor.execute_wkb_void(|maybe_wkb| {
-+            match maybe_wkb {
-+                Some(wkb) => {
-+                    if invoke_scalar(&wkb, &mut builder)? {
-+                        builder.append_value([]);
-+                    } else {
-+                        builder.append_null();
-+                    }
-+                }
-+                None => builder.append_null(),
-+            }
-+
-+            Ok(())
-+        })?;
-+
-+        executor.finish(Arc::new(builder.finish()))
-+    }
-+}
-+
-+fn invoke_scalar(geom: &Wkb, writer: &mut impl std::io::Write) -> Result<bool> {
-+    match geom.as_type() {
-+        geo_traits::GeometryType::Polygon(polygon) => {
-+            if let Some(exterior) = polygon.exterior() {
-+                write_wkb_linestring_header(writer, exterior.dim(), exterior.num_coords())
-+                    .map_err(|e| DataFusionError::Execution(e.to_string()))?;
-+                exterior.coords().try_for_each(|coord| {
-+                    write_wkb_coord_trait(writer, &coord)
-+                        .map_err(|e| DataFusionError::Execution(e.to_string()))
-+                })?;
-+            } else {
-+                write_wkb_linestring_header(writer, geom.dim(), 0)
-+                    .map_err(|e| DataFusionError::Execution(e.to_string()))?;
-+            }
-+            Ok(true)
-+        }
-+        _ => Ok(false),
-+    }
-+}
 diff --git a/rust/sedona-functions/src/st_makeenvelope.rs b/rust/sedona-functions/src/st_makeenvelope.rs
 new file mode 100644
 index 0000000..daa76a8
@@ -576,11 +461,11 @@ index 0000000..daa76a8
 +    }
 +}
 diff --git a/rust/sedona-geo/src/lib.rs b/rust/sedona-geo/src/lib.rs
-index 949c4fc..35152c5 100644
+index 1ed1c5b..db592b0 100644
 --- a/rust/sedona-geo/src/lib.rs
 +++ b/rust/sedona-geo/src/lib.rs
-@@ -23,6 +23,7 @@ mod st_centroid;
- pub mod st_concavehull;
+@@ -24,6 +24,7 @@ pub mod st_concavehull;
+ mod st_convexhull_agg;
  mod st_distance;
  mod st_dwithin;
 +mod st_geomfromgeojson;
@@ -588,7 +473,7 @@ index 949c4fc..35152c5 100644
  mod st_intersects;
  mod st_length;
 diff --git a/rust/sedona-geo/src/register.rs b/rust/sedona-geo/src/register.rs
-index 6c9b5d5..8679898 100644
+index 70fc729..d589231 100644
 --- a/rust/sedona-geo/src/register.rs
 +++ b/rust/sedona-geo/src/register.rs
 @@ -45,6 +45,7 @@ pub fn scalar_kernels() -> Vec<(&'static str, Vec<ScalarKernelRef>)> {

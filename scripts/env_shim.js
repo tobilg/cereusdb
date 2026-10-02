@@ -26,6 +26,48 @@ function writeU64(ptr, value) {
   }
 }
 
+const _textDecoder = new TextDecoder();
+const _pendingOutput = new Map();
+
+// Gathers a WASI iovec array. Writers such as musl's fwrite retry until every
+// byte is reported as written, so the full length must always be returned.
+function readIovs(iovs, iovcnt) {
+  const view = getDataView();
+  if (!view) {
+    return { bytes: new Uint8Array(0), length: 0 };
+  }
+  let length = 0;
+  for (let i = 0; i < iovcnt; i++) {
+    length += view.getUint32(iovs + i * 8 + 4, true);
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (let i = 0; i < iovcnt; i++) {
+    const ptr = view.getUint32(iovs + i * 8, true);
+    const len = view.getUint32(iovs + i * 8 + 4, true);
+    bytes.set(new Uint8Array(_memory.buffer, ptr, len), offset);
+    offset += len;
+  }
+  return { bytes, length };
+}
+
+// Forwards stdout/stderr from the C/C++ libraries (GDAL, PROJ, ...) to the
+// console, one line at a time.
+function forwardOutput(fd, bytes) {
+  if (fd !== 1 && fd !== 2) {
+    return;
+  }
+  const text = (_pendingOutput.get(fd) ?? "") + _textDecoder.decode(bytes);
+  const lines = text.split("\n");
+  _pendingOutput.set(fd, lines.pop());
+  const log = fd === 2 ? console.warn : console.log;
+  for (const line of lines) {
+    if (line.trim()) {
+      log(`[cereusdb] ${line}`);
+    }
+  }
+}
+
 function createCppException(ptr, type, destructor, message = "C++ exception") {
   const error = new WebAssembly.RuntimeError(message);
   error.__cxa_exception_ptr = ptr >>> 0;
@@ -60,7 +102,10 @@ export function createEnvImports() {
 
     // Minimal C++ EH shims. These are enough to satisfy instantiation and
     // propagate exceptions back to JS on paths that actually throw.
+    // LLVM in Emscripten < 6 calls _Unwind_CallPersonality; newer versions
+    // import the personality routine directly.
     _Unwind_CallPersonality: () => 0,
+    __gxx_wasm_personality_v0: () => 0,
     __cxa_begin_catch: (ptr) => {
       const value = ptr >>> 0;
       _caughtCxaExceptions.push(value);
@@ -109,6 +154,7 @@ export function createEnvImports() {
     __syscall_prlimit64: () => UNSUPPORTED_ERRNO,
     __syscall_dup3: () => UNSUPPORTED_ERRNO,
     __syscall_pipe: () => UNSUPPORTED_ERRNO,
+    __syscall_pipe2: () => UNSUPPORTED_ERRNO,
     __syscall_wait4: () => UNSUPPORTED_ERRNO,
     __syscall_getuid32: () => 0,
     __syscall_geteuid32: () => 0,
@@ -143,16 +189,18 @@ export function createEnvImports() {
 export function createWasiImports() {
   return {
     fd_close: () => 0,
-    fd_write: (_fd, _iovs, _iovcnt, pnum) => {
-      writeU32(pnum, 0);
+    fd_write: (fd, iovs, iovcnt, pnum) => {
+      const { bytes, length } = readIovs(iovs, iovcnt);
+      forwardOutput(fd, bytes);
+      writeU32(pnum, length);
       return 0;
     },
     fd_read: (_fd, _iovs, _iovcnt, pnum) => {
       writeU32(pnum, 0);
       return 0;
     },
-    fd_pwrite: (_fd, _iovs, _iovcnt, _offset, pnum) => {
-      writeU32(pnum, 0);
+    fd_pwrite: (_fd, iovs, iovcnt, _offset, pnum) => {
+      writeU32(pnum, readIovs(iovs, iovcnt).length);
       return 0;
     },
     fd_pread: (_fd, _iovs, _iovcnt, _offset, pnum) => {

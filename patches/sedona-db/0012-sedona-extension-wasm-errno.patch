@@ -1,36 +1,188 @@
-diff --git a/c/sedona-extension/src/scalar_kernel.rs b/c/sedona-extension/src/scalar_kernel.rs
-index ad6b5e33..fa710d30 100644
---- a/c/sedona-extension/src/scalar_kernel.rs
-+++ b/c/sedona-extension/src/scalar_kernel.rs
-@@ -613,7 +613,7 @@ unsafe extern "C" fn c_kernel_init(
-         Err(err) => {
-             private_data.last_error =
-                 CString::from_str(&err.message()).unwrap_or(CString::default());
+diff --git a/c/sedona-extension/src/execution_plan.rs b/c/sedona-extension/src/execution_plan.rs
+index 30c5d7d..a67e38a 100644
+--- a/c/sedona-extension/src/execution_plan.rs
++++ b/c/sedona-extension/src/execution_plan.rs
+@@ -174,7 +174,7 @@ unsafe extern "C" fn c_exec_plan_get_schema(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "Failed to convert schema to FFI: {}", e);
 -            libc::EINVAL
-+            invalid_argument_errno()
++            crate::invalid_argument_errno()
          }
      }
  }
-@@ -643,11 +643,21 @@ unsafe extern "C" fn c_kernel_execute(
-         Err(err) => {
-             private_data.last_error =
-                 CString::from_str(&err.message()).unwrap_or(CString::default());
+@@ -196,7 +196,7 @@ unsafe extern "C" fn c_exec_plan_get_property_schema(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "Failed to convert field to FFI schema: {}", e);
 -            libc::EINVAL
-+            invalid_argument_errno()
++            crate::invalid_argument_errno()
          }
      }
+ }
+@@ -223,7 +223,7 @@ unsafe extern "C" fn c_exec_plan_get_property(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "{}", e);
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }
+@@ -252,7 +252,7 @@ unsafe extern "C" fn c_exec_plan_execute(
+         Ok(a) => a,
+         Err(e) => {
+             set_ffi_error!(err, "Failed to parse execute args: {}", e);
+-            return libc::EINVAL;
++            return crate::invalid_argument_errno();
+         }
+     };
+ 
+@@ -266,7 +266,7 @@ unsafe extern "C" fn c_exec_plan_execute(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "{}", e);
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }
+diff --git a/c/sedona-extension/src/expr.rs b/c/sedona-extension/src/expr.rs
+index 58c5ad0..ca29b0b 100644
+--- a/c/sedona-extension/src/expr.rs
++++ b/c/sedona-extension/src/expr.rs
+@@ -131,7 +131,7 @@ unsafe extern "C" fn c_expr_get_property_schema(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "Failed to convert field to FFI schema: {}", e);
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }
+@@ -149,7 +149,7 @@ unsafe extern "C" fn c_expr_get_property(
+ 
+     if args_len > 0 {
+         set_ffi_error!(err, "get_property does not accept arguments");
+-        return libc::EINVAL;
++        return crate::invalid_argument_errno();
+     }
+ 
+     let self_ref = &*self_;
+@@ -165,7 +165,7 @@ unsafe extern "C" fn c_expr_get_property(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "{}", e);
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }
+diff --git a/c/sedona-extension/src/lib.rs b/c/sedona-extension/src/lib.rs
+index 8adf9f5..dd06f2d 100644
+--- a/c/sedona-extension/src/lib.rs
++++ b/c/sedona-extension/src/lib.rs
+@@ -23,3 +23,14 @@ pub mod scalar_kernel;
+ pub mod streaming;
+ pub mod table_provider;
+ pub mod utils;
++
++/// EINVAL for the C ABI; `libc` has no errno constants on wasm32-unknown-unknown.
++#[cfg(target_os = "unknown")]
++pub(crate) const fn invalid_argument_errno() -> std::os::raw::c_int {
++    22
 +}
 +
-+#[cfg(target_os = "unknown")]
-+const fn invalid_argument_errno() -> c_int {
-+    22
- }
- 
 +#[cfg(not(target_os = "unknown"))]
-+const fn invalid_argument_errno() -> c_int {
++pub(crate) const fn invalid_argument_errno() -> std::os::raw::c_int {
 +    libc::EINVAL
 +}
-+
- /// C Callable wrapper to retrieve the last error string
- unsafe extern "C" fn c_kernel_last_error(self_: *mut SedonaCScalarKernelImpl) -> *const c_char {
-     assert!(!self_.is_null());
+diff --git a/c/sedona-extension/src/scalar_kernel.rs b/c/sedona-extension/src/scalar_kernel.rs
+index 2595926..26acf50 100644
+--- a/c/sedona-extension/src/scalar_kernel.rs
++++ b/c/sedona-extension/src/scalar_kernel.rs
+@@ -626,7 +626,7 @@ unsafe extern "C" fn c_kernel_init(
+         Err(err) => {
+             private_data.last_error =
+                 CString::from_str(&err.message()).unwrap_or(CString::default());
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }
+@@ -656,7 +656,7 @@ unsafe extern "C" fn c_kernel_execute(
+         Err(err) => {
+             private_data.last_error =
+                 CString::from_str(&err.message()).unwrap_or(CString::default());
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }
+diff --git a/c/sedona-extension/src/table_provider.rs b/c/sedona-extension/src/table_provider.rs
+index b1a711f..07e628f 100644
+--- a/c/sedona-extension/src/table_provider.rs
++++ b/c/sedona-extension/src/table_provider.rs
+@@ -180,7 +180,7 @@ unsafe extern "C" fn c_table_provider_get_schema(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "Failed to convert schema to FFI: {}", e);
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }
+@@ -202,7 +202,7 @@ unsafe extern "C" fn c_table_provider_get_property_schema(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "Failed to convert field to FFI schema: {}", e);
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }
+@@ -304,7 +304,7 @@ unsafe extern "C" fn c_table_provider_get_property(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "{}", e);
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }
+@@ -340,7 +340,7 @@ unsafe extern "C" fn c_table_provider_scan(
+             Ok(a) => a,
+             Err(e) => {
+                 set_ffi_error!(err, "Failed to parse scan args: {}", e);
+-                return libc::EINVAL;
++                return crate::invalid_argument_errno();
+             }
+         }
+     };
+@@ -360,7 +360,7 @@ unsafe extern "C" fn c_table_provider_scan(
+                 Ok(v) => v,
+                 Err(e) => {
+                     set_ffi_error!(err, "Failed to import expression view: {}", e);
+-                    return libc::EINVAL;
++                    return crate::invalid_argument_errno();
+                 }
+             };
+ 
+@@ -368,7 +368,7 @@ unsafe extern "C" fn c_table_provider_scan(
+                 Ok(expr) => filters.push(expr),
+                 Err(e) => {
+                     set_ffi_error!(err, "Failed to deserialize filter expression: {}", e);
+-                    return libc::EINVAL;
++                    return crate::invalid_argument_errno();
+                 }
+             }
+         }
+@@ -385,7 +385,7 @@ unsafe extern "C" fn c_table_provider_scan(
+         }
+         Err(e) => {
+             set_ffi_error!(err, "{}", e);
+-            libc::EINVAL
++            crate::invalid_argument_errno()
+         }
+     }
+ }

@@ -22,6 +22,24 @@ export const SAMPLE_PARQUET_PATH = resolve(
   'files',
   'natural-earth_cities_geo.parquet',
 );
+// Small fixtures for compression codecs (see js/tests/fixtures).
+export const ZSTD_PARQUET_PATH = resolve(REPO_ROOT, 'js', 'tests', 'fixtures', 'zstd-compressed.parquet');
+export const ZSTD_GEOTIFF_PATH = resolve(REPO_ROOT, 'js', 'tests', 'fixtures', 'zstd-compressed.tif');
+export const LERC_ZSTD_GEOTIFF_PATH = resolve(
+  REPO_ROOT,
+  'js',
+  'tests',
+  'fixtures',
+  'lerc-zstd-compressed.tif',
+);
+// GeoTIFF using a compression codec the WASM GDAL build does not include.
+export const UNSUPPORTED_CODEC_GEOTIFF_PATH = resolve(
+  REPO_ROOT,
+  'js',
+  'tests',
+  'fixtures',
+  'lzma-compressed.tif',
+);
 export const SAMPLE_GEOTIFF_PATH = resolve(
   REPO_ROOT,
   'deps',

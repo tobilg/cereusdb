@@ -1,5 +1,5 @@
 diff --git a/rust/sedona-testing/Cargo.toml b/rust/sedona-testing/Cargo.toml
-index f5ed344e..8e3155e7 100644
+index f5ed344..8e3155e 100644
 --- a/rust/sedona-testing/Cargo.toml
 +++ b/rust/sedona-testing/Cargo.toml
 @@ -37,6 +37,7 @@ rstest = { workspace = true }
@@ -20,11 +20,10 @@ index f5ed344e..8e3155e7 100644
  sedona-common = { workspace = true }
  sedona-geometry = { workspace = true }
 diff --git a/rust/sedona-testing/src/lib.rs b/rust/sedona-testing/src/lib.rs
-index 2bc7b39f..da3f8dcb 100644
+index 23a56dc..8d04c5a 100644
 --- a/rust/sedona-testing/src/lib.rs
 +++ b/rust/sedona-testing/src/lib.rs
-@@ -21,6 +21,7 @@ pub mod data;
- pub mod datagen;
+@@ -22,5 +22,6 @@ pub mod datagen;
  pub mod fixtures;
  pub mod raster_spec;
  pub mod rasters;

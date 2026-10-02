@@ -1,6 +1,9 @@
+import { readFile } from 'node:fs/promises';
+
 import { tableFromIPC } from 'apache-arrow';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { ZSTD_PARQUET_PATH } from './support/paths';
 import type { TestContext } from './support/test-fixtures';
 import { createTestContext } from './support/test-fixtures';
 
@@ -138,6 +141,24 @@ describe('TypeScript WASM package core', () => {
     const rows = await ctx.db.sqlJSON(`SELECT COUNT(*) AS row_count FROM ${tableName}`);
     expect(rows).toHaveLength(1);
     expect(Number(rows[0]?.row_count)).toBeGreaterThan(0);
+  });
+
+  it('reads ZSTD-compressed GeoParquet', async () => {
+    const tableName = 'parquet_zstd_fixture';
+    const file = new File([await readFile(ZSTD_PARQUET_PATH)], 'points.parquet', {
+      type: 'application/octet-stream',
+    });
+
+    await ctx.db.registerFile(tableName, file);
+
+    const rows = await ctx.db.sqlJSON(
+      `SELECT name, value, ST_AsText(ST_GeomFromWKB(geometry)) AS wkt FROM ${tableName} ORDER BY name`,
+    );
+    expect(rows).toEqual([
+      { name: 'a', value: 1, wkt: 'POINT(1 1)' },
+      { name: 'b', value: 2, wkt: 'POINT(2 2)' },
+      { name: 'c', value: 3, wkt: 'POINT(3 3)' },
+    ]);
   });
 
   it('registers remote Parquet files through registerRemoteParquet()', async () => {

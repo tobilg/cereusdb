@@ -1,6 +1,6 @@
 # Runtime Surface Report
 
-Generated: 2026-04-09T07:45:41.927Z
+Generated: 2026-10-01T11:18:25.351Z
 
 This report is generated from the built browser packages under `dist/` and the
 local SedonaDB/Rust docs catalog under `deps/sedona-db/docs/reference/sql`.
@@ -8,18 +8,18 @@ Regenerate it with `make surface-report`.
 
 ## Local Docs Snapshot
 
-- Local `ST_*` qmd pages: 113
-- Local `RS_*` qmd pages: 33
-- Local spatial qmd pages considered here: 146
+- Local `ST_*` qmd pages: 137
+- Local `RS_*` qmd pages: 58
+- Local spatial qmd pages considered here: 195
 
 ## Package Summary
 
 | Package | Runtime `ST_*` | Runtime `RS_*` | Runtime-only names | Docs-only names |
 |---|---:|---:|---:|---:|
-| `geos` | 130 | 0 | 18 | 34 |
-| `geos-proj` | 131 | 0 | 18 | 33 |
-| `geos-proj-s2` | 132 | 0 | 19 | 33 |
-| `full` | 132 | 33 | 19 | 0 |
+| `minimal` | 150 | 0 | 16 | 61 |
+| `standard` | 151 | 0 | 16 | 60 |
+| `global` | 155 | 0 | 18 | 58 |
+| `full` | 155 | 57 | 18 | 1 |
 
 ## Common Runtime-only Names
 
@@ -30,7 +30,6 @@ They include compatibility aliases and patch-added functions.
 - `st_aswkb`: runtime alias of `ST_AsBinary`
 - `st_aswkt`: runtime alias of `ST_AsText`
 - `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
 - `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
@@ -40,14 +39,13 @@ They include compatibility aliases and patch-added functions.
 - `st_geomfromtext`: runtime compatibility alias for text geometry parsing
 - `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
 - `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_linestringfromtext`: runtime alias of `ST_LineFromText`
 - `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorring`: runtime alias of `ST_NumInteriorRings`
 
-## Package: `geos`
+## Package: `minimal`
 
-- Runtime `ST_*` names: 130
+- Runtime `ST_*` names: 150
 - Runtime `RS_*` names: 0
 
 ### Runtime-only Names
@@ -56,7 +54,6 @@ They include compatibility aliases and patch-added functions.
 - `st_aswkb`: runtime alias of `ST_AsBinary`
 - `st_aswkt`: runtime alias of `ST_AsText`
 - `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
 - `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
@@ -66,46 +63,72 @@ They include compatibility aliases and patch-added functions.
 - `st_geomfromtext`: runtime compatibility alias for text geometry parsing
 - `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
 - `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_linestringfromtext`: runtime alias of `ST_LineFromText`
 - `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorring`: runtime alias of `ST_NumInteriorRings`
 
 ### Local-doc Names Not Exposed by This Package
 
+- `rs_asgeotiff`: omitted in this package because raster/GDAL is not enabled
+- `rs_asraster`: omitted in this package because raster/GDAL is not enabled
 - `rs_bandnodatavalue`: omitted in this package because raster/GDAL is not enabled
 - `rs_bandpath`: omitted in this package because raster/GDAL is not enabled
 - `rs_bandpixeltype`: omitted in this package because raster/GDAL is not enabled
+- `rs_bandtodim`: omitted in this package because raster/GDAL is not enabled
+- `rs_clip`: omitted in this package because raster/GDAL is not enabled
 - `rs_contains`: omitted in this package because raster/GDAL is not enabled
 - `rs_convexhull`: omitted in this package because raster/GDAL is not enabled
 - `rs_crs`: omitted in this package because raster/GDAL is not enabled
+- `rs_dimnames`: omitted in this package because raster/GDAL is not enabled
+- `rs_dimsize`: omitted in this package because raster/GDAL is not enabled
+- `rs_dimtoband`: omitted in this package because raster/GDAL is not enabled
 - `rs_envelope`: omitted in this package because raster/GDAL is not enabled
 - `rs_example`: omitted in this package because raster/GDAL is not enabled
+- `rs_fromgdalraster`: omitted in this package because raster/GDAL is not enabled
+- `rs_frompath`: omitted in this package because raster/GDAL is not enabled
 - `rs_georeference`: omitted in this package because raster/GDAL is not enabled
 - `rs_height`: omitted in this package because raster/GDAL is not enabled
 - `rs_intersects`: omitted in this package because raster/GDAL is not enabled
+- `rs_isempty`: omitted in this package because raster/GDAL is not enabled
+- `rs_metadata`: omitted in this package because raster/GDAL is not enabled
 - `rs_numbands`: omitted in this package because raster/GDAL is not enabled
+- `rs_numdimensions`: omitted in this package because raster/GDAL is not enabled
 - `rs_pixelascentroid`: omitted in this package because raster/GDAL is not enabled
 - `rs_pixelaspoint`: omitted in this package because raster/GDAL is not enabled
 - `rs_pixelaspolygon`: omitted in this package because raster/GDAL is not enabled
+- `rs_polygonize`: omitted in this package because raster/GDAL is not enabled
 - `rs_rastertoworldcoord`: omitted in this package because raster/GDAL is not enabled
 - `rs_rastertoworldcoordx`: omitted in this package because raster/GDAL is not enabled
 - `rs_rastertoworldcoordy`: omitted in this package because raster/GDAL is not enabled
+- `rs_reprojectmatch`: omitted in this package because raster/GDAL is not enabled
+- `rs_resample`: omitted in this package because raster/GDAL is not enabled
 - `rs_rotation`: omitted in this package because raster/GDAL is not enabled
 - `rs_scalex`: omitted in this package because raster/GDAL is not enabled
 - `rs_scaley`: omitted in this package because raster/GDAL is not enabled
+- `rs_setbandnodatavalue`: omitted in this package because raster/GDAL is not enabled
 - `rs_setcrs`: omitted in this package because raster/GDAL is not enabled
+- `rs_setgeoreference`: omitted in this package because raster/GDAL is not enabled
 - `rs_setsrid`: omitted in this package because raster/GDAL is not enabled
+- `rs_shape`: omitted in this package because raster/GDAL is not enabled
 - `rs_skewx`: omitted in this package because raster/GDAL is not enabled
 - `rs_skewy`: omitted in this package because raster/GDAL is not enabled
+- `rs_slice`: omitted in this package because raster/GDAL is not enabled
+- `rs_slicerange`: omitted in this package because raster/GDAL is not enabled
 - `rs_srid`: omitted in this package because raster/GDAL is not enabled
+- `rs_tile`: omitted in this package because raster/GDAL is not enabled
 - `rs_upperleftx`: omitted in this package because raster/GDAL is not enabled
 - `rs_upperlefty`: omitted in this package because raster/GDAL is not enabled
+- `rs_value`: omitted in this package because raster/GDAL is not enabled
+- `rs_values`: omitted in this package because raster/GDAL is not enabled
 - `rs_width`: omitted in this package because raster/GDAL is not enabled
 - `rs_within`: omitted in this package because raster/GDAL is not enabled
 - `rs_worldtorastercoord`: omitted in this package because raster/GDAL is not enabled
 - `rs_worldtorastercoordx`: omitted in this package because raster/GDAL is not enabled
 - `rs_worldtorastercoordy`: omitted in this package because raster/GDAL is not enabled
+- `rs_zonalstats`: omitted in this package because raster/GDAL is not enabled
+- `rs_zonalstatsall`: omitted in this package because raster/GDAL is not enabled
+- `st_tessellategeog`: not exposed by the current runtime
+- `st_tessellategeom`: not exposed by the current runtime
 - `st_transform`: omitted in this package because PROJ is not enabled
 
 ### Full Runtime Catalog
@@ -123,16 +146,19 @@ They include compatibility aliases and patch-added functions.
 - `st_azimuth`
 - `st_boundary`
 - `st_buffer`
+- `st_buildarea`
 - `st_centroid`
 - `st_closestpoint`
 - `st_collect_agg`
 - `st_concavehull`
 - `st_contains`
 - `st_convexhull`
+- `st_convexhull_agg`
 - `st_coveredby`
 - `st_covers`
 - `st_crosses`
 - `st_crs`
+- `st_delaunaytriangles`
 - `st_difference`
 - `st_dimension`
 - `st_disjoint`
@@ -157,6 +183,7 @@ They include compatibility aliases and patch-added functions.
 - `st_geogfromwkt`
 - `st_geogpoint`
 - `st_geogtogeometry`
+- `st_geomcollfromtext`
 - `st_geometryfromtext`
 - `st_geometryn`
 - `st_geometrytype`
@@ -170,6 +197,7 @@ They include compatibility aliases and patch-added functions.
 - `st_geomtogeography`
 - `st_hasm`
 - `st_hasz`
+- `st_hausdorffdistance`
 - `st_interiorringn`
 - `st_intersection`
 - `st_intersection_agg`
@@ -183,9 +211,12 @@ They include compatibility aliases and patch-added functions.
 - `st_isvalidreason`
 - `st_knn`
 - `st_length`
+- `st_linefromtext`
 - `st_lineinterpolatepoint`
 - `st_linelocatepoint`
 - `st_linemerge`
+- `st_linestringfromtext`
+- `st_linesubstring`
 - `st_m`
 - `st_makeenvelope`
 - `st_makeline`
@@ -193,29 +224,39 @@ They include compatibility aliases and patch-added functions.
 - `st_maxdistance`
 - `st_minimumclearance`
 - `st_minimumclearanceline`
+- `st_mlinefromtext`
 - `st_mmax`
 - `st_mmin`
+- `st_mpointfromtext`
+- `st_mpolyfromtext`
+- `st_normalize`
 - `st_npoints`
 - `st_nrings`
 - `st_numgeometries`
+- `st_numinteriorring`
 - `st_numinteriorrings`
 - `st_numpoints`
 - `st_overlaps`
 - `st_perimeter`
 - `st_point`
+- `st_pointfromtext`
 - `st_pointm`
 - `st_pointn`
+- `st_pointonsurface`
 - `st_points`
 - `st_pointz`
 - `st_pointzm`
+- `st_polygonfromtext`
 - `st_polygonize`
 - `st_polygonize_agg`
+- `st_reduceprecision`
 - `st_relate`
 - `st_reverse`
 - `st_rotate`
 - `st_rotatex`
 - `st_rotatey`
 - `st_scale`
+- `st_segmentize`
 - `st_setcrs`
 - `st_setsrid`
 - `st_simplify`
@@ -224,6 +265,8 @@ They include compatibility aliases and patch-added functions.
 - `st_srid`
 - `st_startpoint`
 - `st_symdifference`
+- `st_togeography`
+- `st_togeometry`
 - `st_touches`
 - `st_translate`
 - `st_unaryunion`
@@ -241,9 +284,9 @@ They include compatibility aliases and patch-added functions.
 - `st_zmflag`
 - `st_zmin`
 
-## Package: `geos-proj`
+## Package: `standard`
 
-- Runtime `ST_*` names: 131
+- Runtime `ST_*` names: 151
 - Runtime `RS_*` names: 0
 
 ### Runtime-only Names
@@ -252,7 +295,6 @@ They include compatibility aliases and patch-added functions.
 - `st_aswkb`: runtime alias of `ST_AsBinary`
 - `st_aswkt`: runtime alias of `ST_AsText`
 - `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
 - `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
@@ -262,46 +304,72 @@ They include compatibility aliases and patch-added functions.
 - `st_geomfromtext`: runtime compatibility alias for text geometry parsing
 - `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
 - `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_linestringfromtext`: runtime alias of `ST_LineFromText`
 - `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorring`: runtime alias of `ST_NumInteriorRings`
 
 ### Local-doc Names Not Exposed by This Package
 
+- `rs_asgeotiff`: omitted in this package because raster/GDAL is not enabled
+- `rs_asraster`: omitted in this package because raster/GDAL is not enabled
 - `rs_bandnodatavalue`: omitted in this package because raster/GDAL is not enabled
 - `rs_bandpath`: omitted in this package because raster/GDAL is not enabled
 - `rs_bandpixeltype`: omitted in this package because raster/GDAL is not enabled
+- `rs_bandtodim`: omitted in this package because raster/GDAL is not enabled
+- `rs_clip`: omitted in this package because raster/GDAL is not enabled
 - `rs_contains`: omitted in this package because raster/GDAL is not enabled
 - `rs_convexhull`: omitted in this package because raster/GDAL is not enabled
 - `rs_crs`: omitted in this package because raster/GDAL is not enabled
+- `rs_dimnames`: omitted in this package because raster/GDAL is not enabled
+- `rs_dimsize`: omitted in this package because raster/GDAL is not enabled
+- `rs_dimtoband`: omitted in this package because raster/GDAL is not enabled
 - `rs_envelope`: omitted in this package because raster/GDAL is not enabled
 - `rs_example`: omitted in this package because raster/GDAL is not enabled
+- `rs_fromgdalraster`: omitted in this package because raster/GDAL is not enabled
+- `rs_frompath`: omitted in this package because raster/GDAL is not enabled
 - `rs_georeference`: omitted in this package because raster/GDAL is not enabled
 - `rs_height`: omitted in this package because raster/GDAL is not enabled
 - `rs_intersects`: omitted in this package because raster/GDAL is not enabled
+- `rs_isempty`: omitted in this package because raster/GDAL is not enabled
+- `rs_metadata`: omitted in this package because raster/GDAL is not enabled
 - `rs_numbands`: omitted in this package because raster/GDAL is not enabled
+- `rs_numdimensions`: omitted in this package because raster/GDAL is not enabled
 - `rs_pixelascentroid`: omitted in this package because raster/GDAL is not enabled
 - `rs_pixelaspoint`: omitted in this package because raster/GDAL is not enabled
 - `rs_pixelaspolygon`: omitted in this package because raster/GDAL is not enabled
+- `rs_polygonize`: omitted in this package because raster/GDAL is not enabled
 - `rs_rastertoworldcoord`: omitted in this package because raster/GDAL is not enabled
 - `rs_rastertoworldcoordx`: omitted in this package because raster/GDAL is not enabled
 - `rs_rastertoworldcoordy`: omitted in this package because raster/GDAL is not enabled
+- `rs_reprojectmatch`: omitted in this package because raster/GDAL is not enabled
+- `rs_resample`: omitted in this package because raster/GDAL is not enabled
 - `rs_rotation`: omitted in this package because raster/GDAL is not enabled
 - `rs_scalex`: omitted in this package because raster/GDAL is not enabled
 - `rs_scaley`: omitted in this package because raster/GDAL is not enabled
+- `rs_setbandnodatavalue`: omitted in this package because raster/GDAL is not enabled
 - `rs_setcrs`: omitted in this package because raster/GDAL is not enabled
+- `rs_setgeoreference`: omitted in this package because raster/GDAL is not enabled
 - `rs_setsrid`: omitted in this package because raster/GDAL is not enabled
+- `rs_shape`: omitted in this package because raster/GDAL is not enabled
 - `rs_skewx`: omitted in this package because raster/GDAL is not enabled
 - `rs_skewy`: omitted in this package because raster/GDAL is not enabled
+- `rs_slice`: omitted in this package because raster/GDAL is not enabled
+- `rs_slicerange`: omitted in this package because raster/GDAL is not enabled
 - `rs_srid`: omitted in this package because raster/GDAL is not enabled
+- `rs_tile`: omitted in this package because raster/GDAL is not enabled
 - `rs_upperleftx`: omitted in this package because raster/GDAL is not enabled
 - `rs_upperlefty`: omitted in this package because raster/GDAL is not enabled
+- `rs_value`: omitted in this package because raster/GDAL is not enabled
+- `rs_values`: omitted in this package because raster/GDAL is not enabled
 - `rs_width`: omitted in this package because raster/GDAL is not enabled
 - `rs_within`: omitted in this package because raster/GDAL is not enabled
 - `rs_worldtorastercoord`: omitted in this package because raster/GDAL is not enabled
 - `rs_worldtorastercoordx`: omitted in this package because raster/GDAL is not enabled
 - `rs_worldtorastercoordy`: omitted in this package because raster/GDAL is not enabled
+- `rs_zonalstats`: omitted in this package because raster/GDAL is not enabled
+- `rs_zonalstatsall`: omitted in this package because raster/GDAL is not enabled
+- `st_tessellategeog`: not exposed by the current runtime
+- `st_tessellategeom`: not exposed by the current runtime
 
 ### Full Runtime Catalog
 
@@ -318,16 +386,19 @@ They include compatibility aliases and patch-added functions.
 - `st_azimuth`
 - `st_boundary`
 - `st_buffer`
+- `st_buildarea`
 - `st_centroid`
 - `st_closestpoint`
 - `st_collect_agg`
 - `st_concavehull`
 - `st_contains`
 - `st_convexhull`
+- `st_convexhull_agg`
 - `st_coveredby`
 - `st_covers`
 - `st_crosses`
 - `st_crs`
+- `st_delaunaytriangles`
 - `st_difference`
 - `st_dimension`
 - `st_disjoint`
@@ -352,6 +423,7 @@ They include compatibility aliases and patch-added functions.
 - `st_geogfromwkt`
 - `st_geogpoint`
 - `st_geogtogeometry`
+- `st_geomcollfromtext`
 - `st_geometryfromtext`
 - `st_geometryn`
 - `st_geometrytype`
@@ -365,6 +437,7 @@ They include compatibility aliases and patch-added functions.
 - `st_geomtogeography`
 - `st_hasm`
 - `st_hasz`
+- `st_hausdorffdistance`
 - `st_interiorringn`
 - `st_intersection`
 - `st_intersection_agg`
@@ -378,9 +451,12 @@ They include compatibility aliases and patch-added functions.
 - `st_isvalidreason`
 - `st_knn`
 - `st_length`
+- `st_linefromtext`
 - `st_lineinterpolatepoint`
 - `st_linelocatepoint`
 - `st_linemerge`
+- `st_linestringfromtext`
+- `st_linesubstring`
 - `st_m`
 - `st_makeenvelope`
 - `st_makeline`
@@ -388,29 +464,39 @@ They include compatibility aliases and patch-added functions.
 - `st_maxdistance`
 - `st_minimumclearance`
 - `st_minimumclearanceline`
+- `st_mlinefromtext`
 - `st_mmax`
 - `st_mmin`
+- `st_mpointfromtext`
+- `st_mpolyfromtext`
+- `st_normalize`
 - `st_npoints`
 - `st_nrings`
 - `st_numgeometries`
+- `st_numinteriorring`
 - `st_numinteriorrings`
 - `st_numpoints`
 - `st_overlaps`
 - `st_perimeter`
 - `st_point`
+- `st_pointfromtext`
 - `st_pointm`
 - `st_pointn`
+- `st_pointonsurface`
 - `st_points`
 - `st_pointz`
 - `st_pointzm`
+- `st_polygonfromtext`
 - `st_polygonize`
 - `st_polygonize_agg`
+- `st_reduceprecision`
 - `st_relate`
 - `st_reverse`
 - `st_rotate`
 - `st_rotatex`
 - `st_rotatey`
 - `st_scale`
+- `st_segmentize`
 - `st_setcrs`
 - `st_setsrid`
 - `st_simplify`
@@ -419,6 +505,8 @@ They include compatibility aliases and patch-added functions.
 - `st_srid`
 - `st_startpoint`
 - `st_symdifference`
+- `st_togeography`
+- `st_togeometry`
 - `st_touches`
 - `st_transform`
 - `st_translate`
@@ -437,9 +525,9 @@ They include compatibility aliases and patch-added functions.
 - `st_zmflag`
 - `st_zmin`
 
-## Package: `geos-proj-s2`
+## Package: `global`
 
-- Runtime `ST_*` names: 132
+- Runtime `ST_*` names: 155
 - Runtime `RS_*` names: 0
 
 ### Runtime-only Names
@@ -448,7 +536,6 @@ They include compatibility aliases and patch-added functions.
 - `st_aswkb`: runtime alias of `ST_AsBinary`
 - `st_aswkt`: runtime alias of `ST_AsText`
 - `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
 - `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
@@ -458,47 +545,72 @@ They include compatibility aliases and patch-added functions.
 - `st_geomfromtext`: runtime compatibility alias for text geometry parsing
 - `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
 - `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_linestringfromtext`: runtime alias of `ST_LineFromText`
+- `st_longestline`
 - `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorring`: runtime alias of `ST_NumInteriorRings`
 - `st_shortestline`
 
 ### Local-doc Names Not Exposed by This Package
 
+- `rs_asgeotiff`: omitted in this package because raster/GDAL is not enabled
+- `rs_asraster`: omitted in this package because raster/GDAL is not enabled
 - `rs_bandnodatavalue`: omitted in this package because raster/GDAL is not enabled
 - `rs_bandpath`: omitted in this package because raster/GDAL is not enabled
 - `rs_bandpixeltype`: omitted in this package because raster/GDAL is not enabled
+- `rs_bandtodim`: omitted in this package because raster/GDAL is not enabled
+- `rs_clip`: omitted in this package because raster/GDAL is not enabled
 - `rs_contains`: omitted in this package because raster/GDAL is not enabled
 - `rs_convexhull`: omitted in this package because raster/GDAL is not enabled
 - `rs_crs`: omitted in this package because raster/GDAL is not enabled
+- `rs_dimnames`: omitted in this package because raster/GDAL is not enabled
+- `rs_dimsize`: omitted in this package because raster/GDAL is not enabled
+- `rs_dimtoband`: omitted in this package because raster/GDAL is not enabled
 - `rs_envelope`: omitted in this package because raster/GDAL is not enabled
 - `rs_example`: omitted in this package because raster/GDAL is not enabled
+- `rs_fromgdalraster`: omitted in this package because raster/GDAL is not enabled
+- `rs_frompath`: omitted in this package because raster/GDAL is not enabled
 - `rs_georeference`: omitted in this package because raster/GDAL is not enabled
 - `rs_height`: omitted in this package because raster/GDAL is not enabled
 - `rs_intersects`: omitted in this package because raster/GDAL is not enabled
+- `rs_isempty`: omitted in this package because raster/GDAL is not enabled
+- `rs_metadata`: omitted in this package because raster/GDAL is not enabled
 - `rs_numbands`: omitted in this package because raster/GDAL is not enabled
+- `rs_numdimensions`: omitted in this package because raster/GDAL is not enabled
 - `rs_pixelascentroid`: omitted in this package because raster/GDAL is not enabled
 - `rs_pixelaspoint`: omitted in this package because raster/GDAL is not enabled
 - `rs_pixelaspolygon`: omitted in this package because raster/GDAL is not enabled
+- `rs_polygonize`: omitted in this package because raster/GDAL is not enabled
 - `rs_rastertoworldcoord`: omitted in this package because raster/GDAL is not enabled
 - `rs_rastertoworldcoordx`: omitted in this package because raster/GDAL is not enabled
 - `rs_rastertoworldcoordy`: omitted in this package because raster/GDAL is not enabled
+- `rs_reprojectmatch`: omitted in this package because raster/GDAL is not enabled
+- `rs_resample`: omitted in this package because raster/GDAL is not enabled
 - `rs_rotation`: omitted in this package because raster/GDAL is not enabled
 - `rs_scalex`: omitted in this package because raster/GDAL is not enabled
 - `rs_scaley`: omitted in this package because raster/GDAL is not enabled
+- `rs_setbandnodatavalue`: omitted in this package because raster/GDAL is not enabled
 - `rs_setcrs`: omitted in this package because raster/GDAL is not enabled
+- `rs_setgeoreference`: omitted in this package because raster/GDAL is not enabled
 - `rs_setsrid`: omitted in this package because raster/GDAL is not enabled
+- `rs_shape`: omitted in this package because raster/GDAL is not enabled
 - `rs_skewx`: omitted in this package because raster/GDAL is not enabled
 - `rs_skewy`: omitted in this package because raster/GDAL is not enabled
+- `rs_slice`: omitted in this package because raster/GDAL is not enabled
+- `rs_slicerange`: omitted in this package because raster/GDAL is not enabled
 - `rs_srid`: omitted in this package because raster/GDAL is not enabled
+- `rs_tile`: omitted in this package because raster/GDAL is not enabled
 - `rs_upperleftx`: omitted in this package because raster/GDAL is not enabled
 - `rs_upperlefty`: omitted in this package because raster/GDAL is not enabled
+- `rs_value`: omitted in this package because raster/GDAL is not enabled
+- `rs_values`: omitted in this package because raster/GDAL is not enabled
 - `rs_width`: omitted in this package because raster/GDAL is not enabled
 - `rs_within`: omitted in this package because raster/GDAL is not enabled
 - `rs_worldtorastercoord`: omitted in this package because raster/GDAL is not enabled
 - `rs_worldtorastercoordx`: omitted in this package because raster/GDAL is not enabled
 - `rs_worldtorastercoordy`: omitted in this package because raster/GDAL is not enabled
+- `rs_zonalstats`: omitted in this package because raster/GDAL is not enabled
+- `rs_zonalstatsall`: omitted in this package because raster/GDAL is not enabled
 
 ### Full Runtime Catalog
 
@@ -515,16 +627,19 @@ They include compatibility aliases and patch-added functions.
 - `st_azimuth`
 - `st_boundary`
 - `st_buffer`
+- `st_buildarea`
 - `st_centroid`
 - `st_closestpoint`
 - `st_collect_agg`
 - `st_concavehull`
 - `st_contains`
 - `st_convexhull`
+- `st_convexhull_agg`
 - `st_coveredby`
 - `st_covers`
 - `st_crosses`
 - `st_crs`
+- `st_delaunaytriangles`
 - `st_difference`
 - `st_dimension`
 - `st_disjoint`
@@ -549,6 +664,7 @@ They include compatibility aliases and patch-added functions.
 - `st_geogfromwkt`
 - `st_geogpoint`
 - `st_geogtogeometry`
+- `st_geomcollfromtext`
 - `st_geometryfromtext`
 - `st_geometryn`
 - `st_geometrytype`
@@ -562,6 +678,7 @@ They include compatibility aliases and patch-added functions.
 - `st_geomtogeography`
 - `st_hasm`
 - `st_hasz`
+- `st_hausdorffdistance`
 - `st_interiorringn`
 - `st_intersection`
 - `st_intersection_agg`
@@ -575,9 +692,13 @@ They include compatibility aliases and patch-added functions.
 - `st_isvalidreason`
 - `st_knn`
 - `st_length`
+- `st_linefromtext`
 - `st_lineinterpolatepoint`
 - `st_linelocatepoint`
 - `st_linemerge`
+- `st_linestringfromtext`
+- `st_linesubstring`
+- `st_longestline`
 - `st_m`
 - `st_makeenvelope`
 - `st_makeline`
@@ -585,29 +706,39 @@ They include compatibility aliases and patch-added functions.
 - `st_maxdistance`
 - `st_minimumclearance`
 - `st_minimumclearanceline`
+- `st_mlinefromtext`
 - `st_mmax`
 - `st_mmin`
+- `st_mpointfromtext`
+- `st_mpolyfromtext`
+- `st_normalize`
 - `st_npoints`
 - `st_nrings`
 - `st_numgeometries`
+- `st_numinteriorring`
 - `st_numinteriorrings`
 - `st_numpoints`
 - `st_overlaps`
 - `st_perimeter`
 - `st_point`
+- `st_pointfromtext`
 - `st_pointm`
 - `st_pointn`
+- `st_pointonsurface`
 - `st_points`
 - `st_pointz`
 - `st_pointzm`
+- `st_polygonfromtext`
 - `st_polygonize`
 - `st_polygonize_agg`
+- `st_reduceprecision`
 - `st_relate`
 - `st_reverse`
 - `st_rotate`
 - `st_rotatex`
 - `st_rotatey`
 - `st_scale`
+- `st_segmentize`
 - `st_setcrs`
 - `st_setsrid`
 - `st_shortestline`
@@ -617,6 +748,10 @@ They include compatibility aliases and patch-added functions.
 - `st_srid`
 - `st_startpoint`
 - `st_symdifference`
+- `st_tessellategeog`
+- `st_tessellategeom`
+- `st_togeography`
+- `st_togeometry`
 - `st_touches`
 - `st_transform`
 - `st_translate`
@@ -637,8 +772,8 @@ They include compatibility aliases and patch-added functions.
 
 ## Package: `full`
 
-- Runtime `ST_*` names: 132
-- Runtime `RS_*` names: 33
+- Runtime `ST_*` names: 155
+- Runtime `RS_*` names: 57
 
 ### Runtime-only Names
 
@@ -646,7 +781,6 @@ They include compatibility aliases and patch-added functions.
 - `st_aswkb`: runtime alias of `ST_AsBinary`
 - `st_aswkt`: runtime alias of `ST_AsText`
 - `st_expand`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_exteriorring`: local broad-doc extension shipped beyond the SedonaDB baseline
 - `st_geogfromewkb`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromewkt`: Phase 3 geography addition not yet represented as a local qmd page
 - `st_geogfromtext`: runtime alias of `ST_GeogFromWKT`
@@ -656,51 +790,75 @@ They include compatibility aliases and patch-added functions.
 - `st_geomfromtext`: runtime compatibility alias for text geometry parsing
 - `st_geomfromwkbunchecked`: runtime unsafe parsing helper not yet represented as a local qmd page
 - `st_geomtogeography`: Phase 3 geography addition not yet represented as a local qmd page
+- `st_linestringfromtext`: runtime alias of `ST_LineFromText`
+- `st_longestline`
 - `st_makeenvelope`: local broad-doc extension shipped beyond the SedonaDB baseline
-- `st_nrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numinteriorrings`: GEOS helper exposed at runtime without a standalone local qmd page
-- `st_numpoints`: GEOS helper exposed at runtime without a standalone local qmd page
+- `st_numinteriorring`: runtime alias of `ST_NumInteriorRings`
 - `st_shortestline`
 
 ### Local-doc Names Not Exposed by This Package
 
-none
+- `rs_frompath`: not exposed in the browser: no local filesystem or GDAL network access
 
 ### Full Runtime Catalog
 
+- `rs_asgeotiff`
+- `rs_asraster`
 - `rs_bandnodatavalue`
 - `rs_bandpath`
 - `rs_bandpixeltype`
+- `rs_bandtodim`
+- `rs_clip`
 - `rs_contains`
 - `rs_convexhull`
 - `rs_crs`
+- `rs_dimnames`
+- `rs_dimsize`
+- `rs_dimtoband`
 - `rs_envelope`
 - `rs_example`
+- `rs_fromgdalraster`
 - `rs_georeference`
 - `rs_height`
 - `rs_intersects`
+- `rs_isempty`
+- `rs_metadata`
 - `rs_numbands`
+- `rs_numdimensions`
 - `rs_pixelascentroid`
 - `rs_pixelaspoint`
 - `rs_pixelaspolygon`
+- `rs_polygonize`
 - `rs_rastertoworldcoord`
 - `rs_rastertoworldcoordx`
 - `rs_rastertoworldcoordy`
+- `rs_reprojectmatch`
+- `rs_resample`
 - `rs_rotation`
 - `rs_scalex`
 - `rs_scaley`
+- `rs_setbandnodatavalue`
 - `rs_setcrs`
+- `rs_setgeoreference`
 - `rs_setsrid`
+- `rs_shape`
 - `rs_skewx`
 - `rs_skewy`
+- `rs_slice`
+- `rs_slicerange`
 - `rs_srid`
+- `rs_tile`
 - `rs_upperleftx`
 - `rs_upperlefty`
+- `rs_value`
+- `rs_values`
 - `rs_width`
 - `rs_within`
 - `rs_worldtorastercoord`
 - `rs_worldtorastercoordx`
 - `rs_worldtorastercoordy`
+- `rs_zonalstats`
+- `rs_zonalstatsall`
 - `st_affine`
 - `st_analyze_agg`
 - `st_area`
@@ -714,16 +872,19 @@ none
 - `st_azimuth`
 - `st_boundary`
 - `st_buffer`
+- `st_buildarea`
 - `st_centroid`
 - `st_closestpoint`
 - `st_collect_agg`
 - `st_concavehull`
 - `st_contains`
 - `st_convexhull`
+- `st_convexhull_agg`
 - `st_coveredby`
 - `st_covers`
 - `st_crosses`
 - `st_crs`
+- `st_delaunaytriangles`
 - `st_difference`
 - `st_dimension`
 - `st_disjoint`
@@ -748,6 +909,7 @@ none
 - `st_geogfromwkt`
 - `st_geogpoint`
 - `st_geogtogeometry`
+- `st_geomcollfromtext`
 - `st_geometryfromtext`
 - `st_geometryn`
 - `st_geometrytype`
@@ -761,6 +923,7 @@ none
 - `st_geomtogeography`
 - `st_hasm`
 - `st_hasz`
+- `st_hausdorffdistance`
 - `st_interiorringn`
 - `st_intersection`
 - `st_intersection_agg`
@@ -774,9 +937,13 @@ none
 - `st_isvalidreason`
 - `st_knn`
 - `st_length`
+- `st_linefromtext`
 - `st_lineinterpolatepoint`
 - `st_linelocatepoint`
 - `st_linemerge`
+- `st_linestringfromtext`
+- `st_linesubstring`
+- `st_longestline`
 - `st_m`
 - `st_makeenvelope`
 - `st_makeline`
@@ -784,29 +951,39 @@ none
 - `st_maxdistance`
 - `st_minimumclearance`
 - `st_minimumclearanceline`
+- `st_mlinefromtext`
 - `st_mmax`
 - `st_mmin`
+- `st_mpointfromtext`
+- `st_mpolyfromtext`
+- `st_normalize`
 - `st_npoints`
 - `st_nrings`
 - `st_numgeometries`
+- `st_numinteriorring`
 - `st_numinteriorrings`
 - `st_numpoints`
 - `st_overlaps`
 - `st_perimeter`
 - `st_point`
+- `st_pointfromtext`
 - `st_pointm`
 - `st_pointn`
+- `st_pointonsurface`
 - `st_points`
 - `st_pointz`
 - `st_pointzm`
+- `st_polygonfromtext`
 - `st_polygonize`
 - `st_polygonize_agg`
+- `st_reduceprecision`
 - `st_relate`
 - `st_reverse`
 - `st_rotate`
 - `st_rotatex`
 - `st_rotatey`
 - `st_scale`
+- `st_segmentize`
 - `st_setcrs`
 - `st_setsrid`
 - `st_shortestline`
@@ -816,6 +993,10 @@ none
 - `st_srid`
 - `st_startpoint`
 - `st_symdifference`
+- `st_tessellategeog`
+- `st_tessellategeom`
+- `st_togeography`
+- `st_togeometry`
 - `st_touches`
 - `st_transform`
 - `st_translate`

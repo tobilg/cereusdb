@@ -13,7 +13,7 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 license = "Apache-2.0"
 edition = "2021"
 
@@ -39,7 +39,7 @@ http = "1"
 http-body-util = "0.1"
 log = "^0.4"
 object_store = { version = "=0.12.5", default-features = false }
-parquet = { version = "57.1.0", default-features = false, features = ["arrow", "snap", "brotli", "flate2-zlib-rs", "lz4"] }
+parquet = { version = "57.1.0", default-features = false, features = ["arrow", "snap", "brotli", "flate2-zlib-rs", "lz4", "zstd"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 url = "2.5.7"

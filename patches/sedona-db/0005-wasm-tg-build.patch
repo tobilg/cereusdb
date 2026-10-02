@@ -1,5 +1,5 @@
 diff --git a/c/sedona-tg/build.rs b/c/sedona-tg/build.rs
-index 3ea82e9c..fd7aa8ac 100644
+index 3ea82e9..fd7aa8a 100644
 --- a/c/sedona-tg/build.rs
 +++ b/c/sedona-tg/build.rs
 @@ -15,9 +15,18 @@

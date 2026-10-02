@@ -6,14 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  EMSDK_VERSION: '4.0.22'
-  NODE_VERSION: '22'
-  WASM_PACK_VERSION: '0.14.0'
-  BINARYEN_VERSION: 'version_125'
-  BINARYEN_ARCHIVE: 'binaryen-version_125-x86_64-linux.tar.gz'
-  BINARYEN_SHA256: '7c3bc16599c8274a04d34a504fe4be2047884f900e0e2da2f6fb9cd667183be4'
-
 jobs:
   build-scope:
     runs-on: ubuntu-latest
@@ -46,6 +38,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Load pinned versions
+        run: grep -E '^[A-Z][A-Z0-9_]*=' deps/versions.env >> "$GITHUB_ENV"
+
+      - name: Check dependency pins
+        run: make check-deps-remote
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@1.94.0
         with:
@@ -60,32 +58,24 @@ jobs:
       - name: Verify toolchain
         run: emcc -v
 
-      - name: Install pinned Binaryen
+      - name: Use Emscripten's Binaryen
         run: |
-          mkdir -p "$RUNNER_TEMP/binaryen"
-          curl -L --fail --silent --show-error \
-            "https://github.com/WebAssembly/binaryen/releases/download/${{ env.BINARYEN_VERSION }}/${{ env.BINARYEN_ARCHIVE }}" \
-            -o "$RUNNER_TEMP/${{ env.BINARYEN_ARCHIVE }}"
-          echo "${{ env.BINARYEN_SHA256 }}  $RUNNER_TEMP/${{ env.BINARYEN_ARCHIVE }}" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/${{ env.BINARYEN_ARCHIVE }}" -C "$RUNNER_TEMP/binaryen" --strip-components=1
-          echo "$RUNNER_TEMP/binaryen/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/binaryen/bin/wasm-opt" --version
+          BINARYEN_ROOT="$(em-config BINARYEN_ROOT)"
+          echo "$BINARYEN_ROOT/bin" >> "$GITHUB_PATH"
+          "$BINARYEN_ROOT/bin/wasm-opt" --version
 
       - name: Install pinned wasm-pack
         run: cargo install wasm-pack --locked --version ${{ env.WASM_PACK_VERSION }}
 
-      - name: Checkout vcpkg for S2-enabled builds
-        run: git clone --depth 1 https://github.com/microsoft/vcpkg.git deps/vcpkg
-
       - name: Build browser packages
         run: |
           if [ "${{ needs.build-scope.outputs.minimal_only }}" = "true" ]; then
-            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-minimal
+            make build-minimal
           else
-            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-minimal
-            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-standard
-            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-global
-            VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-full
+            make build-minimal
+            make build-standard
+            make build-global
+            make build-full
           fi
 
       - name: Upload WASM artifacts
@@ -114,6 +104,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      - name: Load pinned versions
+        run: grep -E '^[A-Z][A-Z0-9_]*=' deps/versions.env >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

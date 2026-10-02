@@ -47,5 +47,5 @@ Use this when you need everything in `standard`, plus:
 Use this when you need everything in `global`, plus:
 
 - GDAL-backed raster ingestion
-- the current browser `RS_*` catalog
+- the current browser `RS_*` catalog, including GDAL-backed functions such as `RS_Clip`, `RS_Resample`, `RS_ReprojectMatch`, `RS_Polygonize`, `RS_ZonalStats` and `RS_AsGeoTiff` (see the raster functions guide)
 - raster predicates like `RS_Contains`, `RS_Intersects`, and `RS_Within`

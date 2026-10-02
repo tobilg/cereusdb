@@ -4,7 +4,7 @@ set -euo pipefail
 PKG_DIR="${1:?Usage: patch-wasm-js.sh <pkg-dir>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JS="$PKG_DIR/cereusdb.js"
-CACHE_TAG="${CACHE_TAG:-ehfix-20260406-1}"
+CACHE_TAG="${CACHE_TAG:-emsdk6-20261001-2}"
 
 [ -f "$JS" ] || { echo "Error: $JS not found"; exit 1; }
 

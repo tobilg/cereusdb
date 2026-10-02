@@ -4,6 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Pinned dependency and toolchain versions (see DEPENDENCIES.md)
+# shellcheck source=../deps/versions.env
+source "$ROOT_DIR/deps/versions.env"
+
 FEATURES=""
 BUILD_GEOS=false
 BUILD_PROJ=false
@@ -88,6 +92,14 @@ echo "Out dir:  $OUT_DIR"
 bash "$SCRIPT_DIR/prepare-patched-sources.sh"
 
 # Build C/C++ deps if requested and not already built
+# libzstd is used by every package (Parquet) and by GDAL (GeoTIFF), so build it first.
+if [ ! -f "$ROOT_DIR/build/sysroot/lib/libzstd.a" ]; then
+    command -v emcc >/dev/null 2>&1 || { echo "Error: emcc not found"; exit 1; }
+    echo "--- Building zstd ---"
+    mkdir -p "$ROOT_DIR/build"
+    bash "$SCRIPT_DIR/emscripten/build-zstd.sh" "$ROOT_DIR/build/zstd" "$ROOT_DIR/build/sysroot"
+fi
+
 if [ "$BUILD_GEOS" = true ] && [ ! -f "$ROOT_DIR/build/sysroot/lib/libgeos_c.a" ]; then
     command -v emcc >/dev/null 2>&1 || { echo "Error: emcc not found"; exit 1; }
     echo "--- Building GEOS ---"
@@ -113,7 +125,9 @@ if [ "$BUILD_S2" = true ]; then
     command -v emcc >/dev/null 2>&1 || { echo "Error: emcc not found"; exit 1; }
     echo "--- Preparing S2 vcpkg dependencies ---"
     mkdir -p "$ROOT_DIR/build"
-    export VCPKG_ROOT="${VCPKG_ROOT:-$ROOT_DIR/deps/vcpkg}"
+    # Use the pinned submodule; a VCPKG_ROOT from the shell usually points at an
+    # unrelated checkout. CEREUSDB_VCPKG_ROOT is the explicit override.
+    export VCPKG_ROOT="${CEREUSDB_VCPKG_ROOT:-$ROOT_DIR/deps/vcpkg}"
     export VCPKG_TARGET_TRIPLET="${VCPKG_TARGET_TRIPLET:-wasm32-emscripten}"
     export VCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR:-$ROOT_DIR/build/vcpkg/s2-installed}"
     export EMSCRIPTEN_ROOT="${EMSCRIPTEN_ROOT:-$(em-config EMSCRIPTEN_ROOT)}"
@@ -121,18 +135,27 @@ if [ "$BUILD_S2" = true ]; then
 fi
 
 # Set env vars for C deps
-[ "$BUILD_GEOS" = true ] && export GEOS_LIB_DIR="$ROOT_DIR/build/sysroot/lib" GEOS_VERSION="3.13.1"
-[ "$BUILD_PROJ" = true ] && export PROJ_LIB_DIR="$ROOT_DIR/build/sysroot/lib" SQLITE3_INCLUDE_DIR="$ROOT_DIR/build/sysroot/include" CEREUSDB_PROJ_DB_PATH="$ROOT_DIR/build/sysroot/share/proj/proj.db" SEDONA_WASM_PROJ_DB_PATH="$ROOT_DIR/build/sysroot/share/proj/proj.db"
-[ "$BUILD_GDAL" = true ] && export GDAL_LIB_DIR="$ROOT_DIR/build/sysroot/lib" GDAL_VERSION="3.10.0"
+# zstd-sys links the Emscripten-built libzstd via pkg-config instead of compiling
+# its own copy, so GDAL and Parquet share one library. The pkg-config settings
+# only apply to the wasm target and replace the host search path.
+export ZSTD_SYS_USE_PKG_CONFIG=1
+export PKG_CONFIG_ALLOW_CROSS_wasm32_unknown_unknown=1
+export PKG_CONFIG_LIBDIR_wasm32_unknown_unknown="$ROOT_DIR/build/sysroot/lib/pkgconfig"
+export PKG_CONFIG_PATH_wasm32_unknown_unknown=""
+[ "$BUILD_GEOS" = true ] && export GEOS_LIB_DIR="$ROOT_DIR/build/sysroot/lib" GEOS_VERSION="$GEOS_TAG"
+[ "$BUILD_PROJ" = true ] && export PROJ_LIB_DIR="$ROOT_DIR/build/sysroot/lib" SQLITE3_INCLUDE_DIR="$ROOT_DIR/build/sysroot/include"
+[ "$BUILD_GDAL" = true ] && export GDAL_LIB_DIR="$ROOT_DIR/build/sysroot/lib" GDAL_VERSION="${GDAL_TAG#v}"
 
 # Set Emscripten C/C++ runtime link flags when using C deps
 if [ "$BUILD_GEOS" = true ] || [ "$BUILD_PROJ" = true ] || [ "$BUILD_GDAL" = true ]; then
-    EM_CACHE="$(em-config CACHE)"
+    # Use the same project-local cache as scripts/emscripten/*.sh so the runtime
+    # libraries match the toolchain that built the C/C++ dependencies.
+    export EM_CACHE="${EM_CACHE:-$ROOT_DIR/build/emscripten-cache}"
+    embuilder build libc libc++-noexcept libc++abi-noexcept libclang_rt.builtins
     EM_SYSROOT_ROOT="$EM_CACHE/sysroot"
     EM_SYSROOT="$EM_SYSROOT_ROOT/lib/wasm32-emscripten"
-    [ -d "$EM_SYSROOT" ] || EM_SYSROOT="$(dirname "$(which emcc)")/../libexec/cache/sysroot/lib/wasm32-emscripten"
     export CFLAGS_wasm32_unknown_unknown="${CFLAGS_wasm32_unknown_unknown:-} --sysroot=$EM_SYSROOT_ROOT"
-    export RUSTFLAGS="${RUSTFLAGS:-} -L native=$EM_SYSROOT -l static=c -l static=c++-noexcept -l static=c++abi-noexcept -l static=compiler_rt"
+    export RUSTFLAGS="${RUSTFLAGS:-} -L native=$EM_SYSROOT -l static=c -l static=c++-noexcept -l static=c++abi-noexcept -l static=clang_rt.builtins"
 fi
 
 if [ "$BUILD_GDAL" = true ]; then
@@ -156,6 +179,13 @@ WASM_FEATURES=""
 [ -n "$FEATURES" ] && WASM_FEATURES="--features $FEATURES"
 WASM_PACK_NO_OPT=""
 [ "${SKIP_WASM_OPT:-0}" = "1" ] && WASM_PACK_NO_OPT="--no-opt"
+
+# Prefer the Binaryen bundled with Emscripten so wasm-pack and the final
+# wasm-opt pass match the toolchain version.
+if command -v em-config >/dev/null 2>&1; then
+    EM_BINARYEN_BIN="$(em-config BINARYEN_ROOT)/bin"
+    [ -x "$EM_BINARYEN_BIN/wasm-opt" ] && export PATH="$EM_BINARYEN_BIN:$PATH"
+fi
 
 wasm-pack build rust/cereusdb --target web --out-dir "$OUT_DIR" --release $WASM_PACK_NO_OPT $WASM_FEATURES
 

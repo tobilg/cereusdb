@@ -26,8 +26,6 @@ mod io;
 #[cfg(feature = "random-geometry")]
 mod random_geometry;
 mod result;
-#[cfg(all(feature = "s2", not(feature = "proj")))]
-mod s2_order;
 
 // wasm-bindgen 0.2.114 generates Wasm catch wrappers whenever the final module
 // contains EH instructions. Our linked Emscripten-built C++ libraries can
@@ -360,8 +358,15 @@ impl CereusDB {
     }
 
     /// Get version information.
+    ///
+    /// Release builds set `CEREUSDB_VERSION` to the full npm version, including
+    /// prerelease suffixes; other builds fall back to the crate version.
     pub fn version(&self) -> String {
-        format!("CereusDB {}", env!("CARGO_PKG_VERSION"))
+        let version = match option_env!("CEREUSDB_VERSION") {
+            Some(version) if !version.is_empty() => version,
+            _ => env!("CARGO_PKG_VERSION"),
+        };
+        format!("CereusDB {version}")
     }
 }
 

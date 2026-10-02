@@ -21,7 +21,6 @@ const aliasNotes = new Map([
   ['st_aswkb', 'runtime alias of `ST_AsBinary`'],
   ['st_aswkt', 'runtime alias of `ST_AsText`'],
   ['st_expand', 'local broad-doc extension shipped beyond the SedonaDB baseline'],
-  ['st_exteriorring', 'local broad-doc extension shipped beyond the SedonaDB baseline'],
   ['st_geogfromewkb', 'Phase 3 geography addition not yet represented as a local qmd page'],
   ['st_geogfromewkt', 'Phase 3 geography addition not yet represented as a local qmd page'],
   ['st_geogfromtext', 'runtime alias of `ST_GeogFromWKT`'],
@@ -31,9 +30,11 @@ const aliasNotes = new Map([
   ['st_geomfromtext', 'runtime compatibility alias for text geometry parsing'],
   ['st_geomfromwkbunchecked', 'runtime unsafe parsing helper not yet represented as a local qmd page'],
   ['st_geomtogeography', 'Phase 3 geography addition not yet represented as a local qmd page'],
+  ['st_linestringfromtext', 'runtime alias of `ST_LineFromText`'],
   ['st_makeenvelope', 'local broad-doc extension shipped beyond the SedonaDB baseline'],
   ['st_nrings', 'GEOS helper exposed at runtime without a standalone local qmd page'],
   ['st_numinteriorrings', 'GEOS helper exposed at runtime without a standalone local qmd page'],
+  ['st_numinteriorring', 'runtime alias of `ST_NumInteriorRings`'],
   ['st_numpoints', 'GEOS helper exposed at runtime without a standalone local qmd page'],
 ]);
 
@@ -74,6 +75,9 @@ function classifyDocOnly(name, pkg) {
   }
   if (name.startsWith('rs_') && !pkg.hasRaster) {
     return 'omitted in this package because raster/GDAL is not enabled';
+  }
+  if (name === 'rs_frompath') {
+    return 'not exposed in the browser: no local filesystem or GDAL network access';
   }
   return 'not exposed by the current runtime';
 }

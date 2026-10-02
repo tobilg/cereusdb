@@ -17,14 +17,6 @@ on:
         type: boolean
         default: false
 
-env:
-  EMSDK_VERSION: '4.0.22'
-  NODE_VERSION: '22'
-  WASM_PACK_VERSION: '0.14.0'
-  BINARYEN_VERSION: 'version_125'
-  BINARYEN_ARCHIVE: 'binaryen-version_125-x86_64-linux.tar.gz'
-  BINARYEN_SHA256: '7c3bc16599c8274a04d34a504fe4be2047884f900e0e2da2f6fb9cd667183be4'
-
 jobs:
   version:
     runs-on: ubuntu-latest
@@ -75,6 +67,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Load pinned versions
+        run: grep -E '^[A-Z][A-Z0-9_]*=' deps/versions.env >> "$GITHUB_ENV"
+
+      - name: Check dependency pins
+        run: make check-deps-remote
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@1.94.0
         with:
@@ -89,29 +87,23 @@ jobs:
       - name: Verify toolchain
         run: emcc -v
 
-      - name: Install pinned Binaryen
+      - name: Use Emscripten's Binaryen
         run: |
-          mkdir -p "$RUNNER_TEMP/binaryen"
-          curl -L --fail --silent --show-error \
-            "https://github.com/WebAssembly/binaryen/releases/download/${{ env.BINARYEN_VERSION }}/${{ env.BINARYEN_ARCHIVE }}" \
-            -o "$RUNNER_TEMP/${{ env.BINARYEN_ARCHIVE }}"
-          echo "${{ env.BINARYEN_SHA256 }}  $RUNNER_TEMP/${{ env.BINARYEN_ARCHIVE }}" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/${{ env.BINARYEN_ARCHIVE }}" -C "$RUNNER_TEMP/binaryen" --strip-components=1
-          echo "$RUNNER_TEMP/binaryen/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/binaryen/bin/wasm-opt" --version
+          BINARYEN_ROOT="$(em-config BINARYEN_ROOT)"
+          echo "$BINARYEN_ROOT/bin" >> "$GITHUB_PATH"
+          "$BINARYEN_ROOT/bin/wasm-opt" --version
 
       - name: Install pinned wasm-pack
         run: cargo install wasm-pack --locked --version ${{ env.WASM_PACK_VERSION }}
 
-      - name: Checkout vcpkg for S2-enabled builds
-        run: git clone --depth 1 https://github.com/microsoft/vcpkg.git deps/vcpkg
-
       - name: Build browser packages
+        env:
+          CEREUSDB_VERSION: ${{ needs.version.outputs.version }}
         run: |
-          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-minimal
-          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-standard
-          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-global
-          VCPKG_ROOT="$GITHUB_WORKSPACE/deps/vcpkg" make build-full
+          make build-minimal
+          make build-standard
+          make build-global
+          make build-full
 
       - name: Upload WASM artifacts
         uses: actions/upload-artifact@v7
@@ -128,6 +120,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [version, build-wasm]
     timeout-minutes: 45
+    # npm trusted publishing: npm exchanges the GitHub OIDC token for a
+    # short-lived publish credential and attaches provenance automatically.
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -139,6 +136,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Load pinned versions
+        run: grep -E '^[A-Z][A-Z0-9_]*=' deps/versions.env >> "$GITHUB_ENV"
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -146,6 +146,11 @@ jobs:
           cache: npm
           cache-dependency-path: js/package-lock.json
           registry-url: https://registry.npmjs.org
+
+      - name: Install npm with trusted publishing support
+        run: |
+          npm install -g "npm@${NPM_VERSION}"
+          npm --version
 
       - name: Download WASM artifacts
         uses: actions/download-artifact@v8
@@ -177,8 +182,6 @@ jobs:
       - name: Publish @cereusdb/${{ matrix.package }}
         if: ${{ needs.version.outputs.dry_run != 'true' }}
         run: cd packages/${{ matrix.package }} && npm publish --access public --tag "${{ needs.version.outputs.npm_tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   deploy-docs:
     runs-on: ubuntu-latest
@@ -191,6 +194,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Load pinned versions
+        run: grep -E '^[A-Z][A-Z0-9_]*=' deps/versions.env >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -249,6 +255,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Load pinned versions
+        run: grep -E '^[A-Z][A-Z0-9_]*=' deps/versions.env >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

@@ -8,10 +8,11 @@ CereusDB compiles Apache SedonaDB (a spatial SQL engine built on DataFusion/Arro
 
 ## Build Commands
 
-Prerequisites: Rust stable with `wasm32-unknown-unknown` target, Emscripten SDK, wasm-pack, binaryen (wasm-opt), Node.js.
+Prerequisites: Rust (pinned in `rust-toolchain.toml`) with `wasm32-unknown-unknown` target, Emscripten SDK, wasm-pack, Node.js. `wasm-opt` comes from the Binaryen bundled with Emscripten. Exact versions are pinned in `deps/versions.env`.
 
 ```
 make deps                # Initialize git submodules
+make check-deps          # Validate submodules/toolchain against deps/versions.env
 make prepare-sources     # Apply patches from patches/ onto deps/ into build/patched-sources/
 make check               # cargo check -p cereusdb (prepares sources first)
 
@@ -46,7 +47,7 @@ Run the narrowest package target that covers your change: `minimal` for GEOS-onl
 
 ### Dependency Pipeline
 
-Submodules in `deps/` are never modified directly. `scripts/prepare-patched-sources.sh` exports them via `git archive` and applies patch series from `patches/` into `build/patched-sources/`. The root `Cargo.toml` uses `[patch.crates-io]` to redirect `geos-sys`, `proj-sys`, `gdal-sys` to these patched copies.
+Submodules in `deps/` are never modified directly. Each one is pinned in `deps/versions.env` by upstream tag (`<NAME>_TAG`, or `<NAME>_COMMIT` when untagged); bumping a submodule means updating that file too, and `make check-deps` enforces it. `scripts/prepare-patched-sources.sh` exports them via `git archive` and applies patch series from `patches/` into `build/patched-sources/`. The root `Cargo.toml` uses `[patch.crates-io]` to redirect `geos-sys`, `proj-sys`, `gdal-sys` to these patched copies.
 
 Emscripten C/C++ libraries are built by scripts in `scripts/emscripten/` into `build/sysroot/lib/`. `scripts/build.sh` conditionally builds them if not already present, then links them via `RUSTFLAGS` `-l static=...` flags.
 

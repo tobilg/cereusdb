@@ -32,8 +32,8 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 #[cfg(feature = "spatial-join")]
 use sedona_common::{
     option::{
-        add_sedona_option_extension, ExecutionMode, NumSpatialPartitionsConfig, SedonaOptions,
-        SpatialJoinDebugOptions, SpatialJoinOptions, SpatialLibrary,
+        ExecutionMode, NumSpatialPartitionsConfig, SedonaOptions, SpatialJoinDebugOptions,
+        SpatialJoinOptions, SpatialLibrary,
     },
     sedona_internal_err,
 };
@@ -42,13 +42,17 @@ use wasm_bindgen::JsValue;
 
 #[cfg(feature = "random-geometry")]
 use crate::random_geometry::register_random_geometry_function;
-#[cfg(all(feature = "s2", not(feature = "proj")))]
-use crate::s2_order::S2OrderLngLat;
-
-#[cfg(feature = "spatial-join")]
-const UNSUPPORTED_WASM_SCALAR_UDFS: &[&str] = &[];
-#[cfg(not(feature = "spatial-join"))]
-const UNSUPPORTED_WASM_SCALAR_UDFS: &[&str] = &["st_knn"];
+const UNSUPPORTED_WASM_SCALAR_UDFS: &[&str] = &[
+    #[cfg(not(feature = "spatial-join"))]
+    "st_knn",
+    // ST_Transform is in the default function set but needs the PROJ CRS engine.
+    #[cfg(not(feature = "proj"))]
+    "st_transform",
+    // Opens files or URLs through GDAL; the browser build has neither a local
+    // filesystem nor /vsicurl.
+    #[cfg(feature = "gdal")]
+    "rs_frompath",
+];
 
 fn console_log(msg: &str) {
     web_sys::console::log_1(&JsValue::from_str(msg));
@@ -58,12 +62,13 @@ fn console_log(msg: &str) {
 pub fn create_sedona_session_context() -> Result<SessionContext> {
     #[cfg(feature = "spatial-join")]
     let session_config = {
-        let mut session_config = add_sedona_option_extension(
-            SessionConfig::new()
-                .with_information_schema(true)
-                .with_target_partitions(1),
-        );
+        let mut session_config = SessionConfig::new()
+            .with_information_schema(true)
+            .with_target_partitions(1)
+            .with_option_extension(SedonaOptions::default());
         configure_wasm_spatial_join_options(&mut session_config)?;
+        #[cfg(feature = "proj")]
+        configure_proj_crs_engine(&mut session_config)?;
         session_config
     };
 
@@ -132,6 +137,24 @@ fn configure_wasm_spatial_join_options(session_config: &mut SessionConfig) -> Re
     Ok(())
 }
 
+/// Route ST_Transform and other CRS lookups through PROJ, as upstream SedonaDB does.
+#[cfg(feature = "proj")]
+fn configure_proj_crs_engine(session_config: &mut SessionConfig) -> Result<()> {
+    let Some(options) = session_config
+        .options_mut()
+        .extensions
+        .get_mut::<SedonaOptions>()
+    else {
+        return sedona_internal_err!("SedonaOptions extension missing from SessionConfig");
+    };
+
+    options.runtime = options
+        .runtime
+        .with_crs_engine(Arc::new(sedona_proj::transform::LazyProjEngine));
+
+    Ok(())
+}
+
 /// Register spatial functions from sedona-functions and sedona-geo crates.
 fn register_spatial_functions(ctx: &SessionContext) -> Result<()> {
     // Register the default function set from sedona-functions.
@@ -174,16 +197,6 @@ fn register_spatial_functions(ctx: &SessionContext) -> Result<()> {
         }
     }
 
-    #[cfg(feature = "proj")]
-    {
-        console_log("[context] registering PROJ functions...");
-        let proj_kernels = sedona_proj::register::scalar_kernels();
-        for (name, kernel_refs) in proj_kernels {
-            let udf = fs.add_scalar_udf_impl(name, kernel_refs)?;
-            ctx.register_udf(udf.clone().into());
-        }
-    }
-
     #[cfg(feature = "s2")]
     {
         let s2_kernels = sedona_s2geography::register::scalar_kernels()?;
@@ -199,12 +212,9 @@ fn register_spatial_functions(ctx: &SessionContext) -> Result<()> {
         }
 
         console_log("[context] registering S2 sd_order override...");
-        #[cfg(feature = "proj")]
-        let sd_order_kernel = sedona_proj::sd_order_lnglat::OrderLngLat::new(
+        let sd_order_kernel = sedona_functions::sd_order_lnglat::OrderLngLat::new(
             sedona_s2geography::utils::s2_cell_id_from_lnglat,
         );
-        #[cfg(not(feature = "proj"))]
-        let sd_order_kernel = S2OrderLngLat::new(sedona_s2geography::utils::s2_cell_id_from_lnglat);
         let udf = fs.add_scalar_udf_impl("sd_order", sd_order_kernel)?;
         ctx.register_udf(udf.clone().into());
     }
@@ -214,6 +224,10 @@ fn register_spatial_functions(ctx: &SessionContext) -> Result<()> {
         console_log("[context] registering raster functions...");
         let raster_function_set = sedona_raster_functions::register::default_function_set();
         register_function_set(ctx, &raster_function_set);
+
+        console_log("[context] registering GDAL raster functions...");
+        let raster_gdal_function_set = sedona_raster_gdal::register::default_function_set();
+        register_function_set(ctx, &raster_gdal_function_set);
     }
 
     console_log("[context] all functions registered");
@@ -226,6 +240,11 @@ fn configure_proj_engine() -> Result<()> {
     sedona_proj::register::configure_global_proj_engine(
         sedona_proj::register::ProjCrsEngineBuilder::default(),
     )
+    .map_err(|error| {
+        datafusion::error::DataFusionError::Execution(format!(
+            "Failed to configure PROJ engine: {error}"
+        ))
+    })
 }
 
 #[cfg(feature = "gdal")]

@@ -42,6 +42,8 @@ await db.registerRemoteParquet('cities', 'https://example.com/cities.parquet');
 db.registerGeoJSON('regions', geojsonObject);
 ```
 
+All packages read Parquet files compressed with Snappy, Gzip, Brotli, LZ4, or ZSTD.
+
 `registerRemoteParquet()` downloads a whole remote Parquet file into the browser runtime. For ranged reads, exact object URLs, and object-store listing, use the browser object-store API in `@cereusdb/standard`, `@cereusdb/global`, or `@cereusdb/full`:
 
 ```ts

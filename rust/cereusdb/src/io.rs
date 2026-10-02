@@ -240,8 +240,6 @@ unsafe fn dataset_to_raster_struct(
     format: &str,
 ) -> std::result::Result<StructArray, String> {
     use sedona_raster::builder::RasterBuilder;
-    use sedona_raster::traits::{BandMetadata, RasterMetadata};
-    use sedona_schema::raster::StorageType;
 
     let width = gdal_sys::GDALGetRasterXSize(dataset);
     let height = gdal_sys::GDALGetRasterYSize(dataset);
@@ -266,20 +264,19 @@ unsafe fn dataset_to_raster_struct(
 
     let crs = dataset_crs_as_projjson(api, dataset)?;
 
-    let raster_metadata = RasterMetadata {
-        width: width as i64,
-        height: height as i64,
-        upperleft_x: geo_transform[0],
-        upperleft_y: geo_transform[3],
-        scale_x: geo_transform[1],
-        scale_y: geo_transform[5],
-        skew_x: geo_transform[2],
-        skew_y: geo_transform[4],
-    };
-
     let mut builder = RasterBuilder::new(1);
     builder
-        .start_raster(&raster_metadata, crs.as_deref())
+        .start_raster_2d(
+            width as i64,
+            height as i64,
+            geo_transform[0],
+            geo_transform[3],
+            geo_transform[1],
+            geo_transform[5],
+            geo_transform[2],
+            geo_transform[4],
+            crs.as_deref(),
+        )
         .map_err(|error| format!("Failed to start raster builder: {error}"))?;
 
     for band_index in 1..=band_count {
@@ -312,13 +309,7 @@ unsafe fn dataset_to_raster_struct(
         let mut band_bytes = vec![0_u8; buffer_len];
 
         builder
-            .start_band(BandMetadata {
-                nodata_value,
-                storage_type: StorageType::InDb,
-                datatype: band_data_type,
-                outdb_url: None,
-                outdb_band_id: None,
-            })
+            .start_band_2d(band_data_type, nodata_value.as_deref())
             .map_err(|error| format!("Failed to start raster band: {error}"))?;
 
         gdal_sys::CPLErrorReset();

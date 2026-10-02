@@ -8,11 +8,15 @@ Smallest public CereusDB browser package. Includes the shared browser API, GEOS-
 npm install @cereusdb/minimal
 ```
 
+## Parquet support
+
+Parquet files compressed with Snappy, Gzip, Brotli, LZ4, or ZSTD can be registered.
+
 ## SQL function availability
 
 Current runtime surface:
 
-- `130` runtime `ST_*` names
+- `150` runtime `ST_*` names
 - `0` runtime `RS_*` names
 
 Included function families:
@@ -32,6 +36,20 @@ Not included in this package:
 ## Object storage support
 
 Browser object stores are not included in `@cereusdb/minimal`. Use `@cereusdb/standard`, `@cereusdb/global`, or `@cereusdb/full` when you need `registerObjectStores()` and `registerParquetTable()`.
+
+## Loading the WASM module
+
+The wasm binary ships as a separate file, `dist/wasm/cereusdb_bg.wasm`. The default entry finds it automatically, and bundlers emit it as an asset.
+
+If you host the wasm yourself, or your bundler inlines assets into large `data:application/wasm;base64,...` strings, use the `external` entry. It has no built-in wasm reference and requires `wasmUrl` or `wasmSource`:
+
+```ts
+import { CereusDB } from '@cereusdb/minimal/external';
+
+const db = await CereusDB.create({ wasmUrl: '/wasm/cereusdb_bg.wasm' });
+```
+
+Copy `node_modules/@cereusdb/minimal/dist/wasm/cereusdb_bg.wasm` to your static assets, or import its URL with Vite: `import wasmUrl from '@cereusdb/minimal/wasm?url'`. See the [WASM loading guide](https://github.com/tobilg/cereusdb/blob/main/packages/documentation/guides/wasm-loading.md) for details.
 
 ## JS / TS API
 

@@ -5,6 +5,7 @@
 
 ## Build, Test, and Development Commands
 - `make deps`: initialize all dependency submodules.
+- `make check-deps`: validate submodule commits and toolchain pins against `deps/versions.env`.
 - `make prepare-sources`: generate patched source trees under `build/`.
 - `make check`: run `cargo check -p cereusdb`.
 - `make build-minimal`, `make build-standard`, `make build-global`, `make build-full`: build the public browser packages.

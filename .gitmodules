@@ -31,3 +31,9 @@
 [submodule "deps/object-store"]
 	path = deps/object-store
 	url = https://github.com/apache/arrow-rs-object-store.git
+[submodule "deps/vcpkg"]
+	path = deps/vcpkg
+	url = https://github.com/microsoft/vcpkg.git
+[submodule "deps/zstd"]
+	path = deps/zstd
+	url = https://github.com/facebook/zstd.git

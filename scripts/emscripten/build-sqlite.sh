@@ -22,6 +22,9 @@ cd "$BUILD_DIR"
 
 if [ ! -f "$BUILD_DIR/Makefile" ]; then
     export CCACHE_DISABLE=1
+    # SQLite's autosetup prefixes the compiler with any ccache it finds;
+    # "none" keeps it out of the command line entirely.
+    export CCACHE=none
     export CC=emcc
     export AR=emar
     export RANLIB=emranlib

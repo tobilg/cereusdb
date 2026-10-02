@@ -16,7 +16,55 @@ export interface RasterFunctionCase {
   reference?: string;
 }
 
+// A reference raster without skew; RS_AsRaster rejects skewed references.
+const UNSKEWED_RASTER = "RS_SetGeoReference(RS_Example(), '1 0 0 -1 0 32')";
+const CLIP_POLYGON = "ST_GeomFromText('POLYGON ((60 90, 160 90, 160 190, 60 190, 60 90))', 'OGC:CRS84')";
+
 const MANUAL_CASES: Record<string, RasterFunctionCase> = {
+  // GDAL-backed functions from sedona-raster-gdal. RS_FromPath is not exposed
+  // in the browser build, so these cases start from in-memory rasters.
+  rs_asraster: {
+    name: 'rs_asraster',
+    query: `SELECT RS_Width(RS_AsRaster(ST_GeomFromText('POLYGON ((2 2, 8 2, 8 8, 2 8, 2 2))', 'OGC:CRS84'), ${UNSKEWED_RASTER}, 'b', true, 1)) AS value`,
+    source: 'manual',
+    expectation: { kind: 'field-equals', field: 'value', value: 6 },
+  },
+  rs_clip: {
+    name: 'rs_clip',
+    query: `SELECT RS_Width(RS_Clip(RS_Example(), 1, ${CLIP_POLYGON})) AS value`,
+    source: 'manual',
+    expectation: { kind: 'field-equals', field: 'value', value: 64 },
+  },
+  rs_fromgdalraster: {
+    name: 'rs_fromgdalraster',
+    query: 'SELECT RS_Width(RS_FromGDALRaster(RS_AsGeoTiff(RS_Example()))) AS value',
+    source: 'manual',
+    expectation: { kind: 'field-equals', field: 'value', value: 64 },
+  },
+  rs_reprojectmatch: {
+    name: 'rs_reprojectmatch',
+    query: 'SELECT RS_Width(RS_ReprojectMatch(RS_Example(), RS_Example())) AS value',
+    source: 'manual',
+    expectation: { kind: 'field-equals', field: 'value', value: 64 },
+  },
+  rs_resample: {
+    name: 'rs_resample',
+    query: "SELECT RS_Width(RS_Resample(RS_Example(), 32, 16, false, 'NearestNeighbor')) AS value",
+    source: 'manual',
+    expectation: { kind: 'field-equals', field: 'value', value: 32 },
+  },
+  rs_tile: {
+    name: 'rs_tile',
+    query: 'SELECT COUNT(*) AS value FROM (SELECT UNNEST(RS_Tile(RS_Example(), 32, 16)) AS tile)',
+    source: 'manual',
+    expectation: { kind: 'field-equals', field: 'value', value: 4 },
+  },
+  rs_zonalstats: {
+    name: 'rs_zonalstats',
+    query: `SELECT RS_ZonalStats(RS_Example(), ${CLIP_POLYGON}, 1, 'mean') AS value`,
+    source: 'manual',
+    expectation: { kind: 'field-equals', field: 'value', value: 1 },
+  },
   rs_example: {
     name: 'rs_example',
     query: 'SELECT RS_Width(RS_Example()) AS value',

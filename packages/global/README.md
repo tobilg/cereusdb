@@ -10,11 +10,15 @@ This package includes browser object stores for ranged remote Parquet reads and 
 npm install @cereusdb/global
 ```
 
+## Parquet support
+
+Parquet files compressed with Snappy, Gzip, Brotli, LZ4, or ZSTD can be registered.
+
 ## SQL function availability
 
 Current runtime surface:
 
-- `132` runtime `ST_*` names
+- `155` runtime `ST_*` names
 - `0` runtime `RS_*` names
 
 Included function families:
@@ -50,6 +54,20 @@ Not included in this package:
 ## Object storage support
 
 Browser object stores are included in `@cereusdb/global`. Use `registerObjectStores()` to configure `http`, `s3`, `gcs`, or `azure` providers, then `registerParquetTable()` to register an exact Parquet object or provider-backed prefix.
+
+## Loading the WASM module
+
+The wasm binary ships as a separate file, `dist/wasm/cereusdb_bg.wasm`. The default entry finds it automatically, and bundlers emit it as an asset.
+
+If you host the wasm yourself, or your bundler inlines assets into large `data:application/wasm;base64,...` strings, use the `external` entry. It has no built-in wasm reference and requires `wasmUrl` or `wasmSource`:
+
+```ts
+import { CereusDB } from '@cereusdb/global/external';
+
+const db = await CereusDB.create({ wasmUrl: '/wasm/cereusdb_bg.wasm' });
+```
+
+Copy `node_modules/@cereusdb/global/dist/wasm/cereusdb_bg.wasm` to your static assets, or import its URL with Vite: `import wasmUrl from '@cereusdb/global/wasm?url'`. See the [WASM loading guide](https://github.com/tobilg/cereusdb/blob/main/packages/documentation/guides/wasm-loading.md) for details.
 
 ## JS / TS API
 

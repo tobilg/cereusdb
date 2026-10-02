@@ -1,7 +1,7 @@
-.PHONY: help deps deps-init deps-absorb prepare-sources check install-js-deps install-playground-deps \
+.PHONY: help deps deps-init deps-absorb check-deps check-deps-remote prepare-sources check install-js-deps install-playground-deps \
 	build build-minimal build-standard build-global build-full build-geos build-geos-proj build-geos-proj-s2 build-proj build-gdal \
 	build-rust-minimal build-rust-standard build-rust-global build-rust-full build-rust-geos build-rust-geos-proj build-rust-geos-proj-s2 build-rust-proj build-rust-gdal \
-	build-sqlite-lib build-geos-lib build-proj-lib build-gdal-deps-lib build-gdal-lib \
+	build-zstd-lib build-sqlite-lib build-geos-lib build-proj-lib build-gdal-deps-lib build-gdal-lib \
 	s2-vcpkg-bootstrap s2-vcpkg-install s2-spike-vcpkg \
 	build-js build-ts build-playground package-minimal package-standard package-global package-full package-all sync-versions \
 	smoke-package-minimal smoke-package-standard smoke-package-global smoke-package-full smoke-package-all \
@@ -12,6 +12,8 @@
 help:
 	@printf '%s\n' \
 		'make deps               Initialize all submodules' \
+		'make check-deps         Validate submodules and toolchain pins against deps/versions.env' \
+		'make check-deps-remote  Also verify pinned tags upstream (needs network)' \
 		'make prepare-sources    Generate patched source trees under build/' \
 		'make check              Prepare sources and run cargo check' \
 		'make install-js-deps    Install JavaScript test/build dependencies' \
@@ -40,6 +42,7 @@ help:
 		'make test-js-standard   Build the standard package and run the Vitest suite' \
 		'make test-js-global     Build the global package and run the Vitest suite' \
 		'make test-js-full       Build the full browser package and run the Vitest suite' \
+		'make build-zstd-lib     Build zstd static library for Emscripten' \
 		'make build-sqlite-lib   Build SQLite static library for Emscripten' \
 		'make build-geos-lib     Build GEOS static library for Emscripten' \
 		'make build-proj-lib     Build PROJ static library for Emscripten' \
@@ -64,7 +67,13 @@ deps-init:
 	git submodule update --init --recursive
 
 deps-absorb:
-	git submodule absorbgitdirs deps/sedona-db deps/object-store deps/geos deps/proj deps/gdal deps/expat deps/zlib deps/georust-geos deps/georust-proj deps/georust-gdal deps/sqlite-src
+	git submodule absorbgitdirs deps/sedona-db deps/object-store deps/geos deps/proj deps/gdal deps/expat deps/zlib deps/georust-geos deps/georust-proj deps/georust-gdal deps/sqlite-src deps/zstd deps/vcpkg
+
+check-deps:
+	node scripts/check-deps.mjs
+
+check-deps-remote:
+	node scripts/check-deps.mjs --remote
 
 prepare-sources:
 	bash scripts/prepare-patched-sources.sh
@@ -119,6 +128,9 @@ build-rust-full:
 	bash scripts/build.sh --full --out-dir dist/full
 
 build-rust-gdal: build-rust-full
+
+build-zstd-lib:
+	bash scripts/emscripten/build-zstd.sh build/zstd build/sysroot
 
 build-sqlite-lib:
 	bash scripts/emscripten/build-sqlite.sh build/sqlite build/sysroot

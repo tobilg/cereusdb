@@ -11,7 +11,9 @@
   "projectDocuments": [
     "./guides/getting-started.md",
     "./guides/package-selection.md",
-    "./guides/browser-object-stores.md"
+    "./guides/browser-object-stores.md",
+    "./guides/wasm-loading.md",
+    "./guides/raster-functions.md"
   ],
   "includeVersion": false,
   "excludePrivate": true,

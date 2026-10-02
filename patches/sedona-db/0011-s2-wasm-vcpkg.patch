@@ -1,37 +1,42 @@
-diff --git a/c/sedona-proj/build.rs b/c/sedona-proj/build.rs
-index 5186777a..a43e85d2 100644
---- a/c/sedona-proj/build.rs
-+++ b/c/sedona-proj/build.rs
-@@ -12,15 +12,22 @@ fn main() {
-         return;
-     }
+diff --git a/c/sedona-s2geography/CMakeLists.txt b/c/sedona-s2geography/CMakeLists.txt
+index ddfa285..c52d251 100644
+--- a/c/sedona-s2geography/CMakeLists.txt
++++ b/c/sedona-s2geography/CMakeLists.txt
+@@ -22,6 +22,17 @@ include(FetchContent)
+ # Required for S2
+ set(CMAKE_CXX_STANDARD 17)
  
-+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set"));
-+    let generated_rs = out_dir.join("embedded_proj_db.rs");
++# Emscripten/OpenSSL in this browser build path is configured without pthreads.
++# Predeclare a no-op Threads target so the static OpenSSL wrapper can resolve it.
++if(EMSCRIPTEN)
++  set(Threads_FOUND TRUE)
++  set(CMAKE_THREAD_LIBS_INIT "")
++  set(CMAKE_USE_PTHREADS_INIT FALSE)
++  if(NOT TARGET Threads::Threads)
++    add_library(Threads::Threads INTERFACE IMPORTED)
++  endif()
++endif()
 +
-+    if env::var_os("CARGO_FEATURE_PROJ_SYS").is_none() {
-+        fs::write(&generated_rs, "pub static PROJ_DB: &[u8] = &[];\n")
-+            .expect("Failed to write empty embedded proj.db module");
-+        return;
-+    }
-+
-     let proj_db_path = env::var("SEDONA_WASM_PROJ_DB_PATH")
-         .expect("SEDONA_WASM_PROJ_DB_PATH must point to proj.db for wasm32 builds");
-     let sqlite_include_dir = env::var("SQLITE3_INCLUDE_DIR")
-         .expect("SQLITE3_INCLUDE_DIR must point to the SQLite headers for wasm32 builds");
--    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set"));
- 
-     println!("cargo:rerun-if-changed={proj_db_path}");
- 
--    let generated_rs = out_dir.join("embedded_proj_db.rs");
-     let generated = format!(
-         "pub static PROJ_DB: &[u8] = include_bytes!(r#\"{}\"#);\n",
-         proj_db_path
+ # These are our two external dependencies that we don't build on the fly.
+ # These can be installed with homebrew or vcpkg (see README).
+ find_package(OpenSSL REQUIRED)
+diff --git a/c/sedona-s2geography/Cargo.toml b/c/sedona-s2geography/Cargo.toml
+index f2b61d1..7657319 100644
+--- a/c/sedona-s2geography/Cargo.toml
++++ b/c/sedona-s2geography/Cargo.toml
+@@ -43,7 +43,6 @@ arrow-schema = { workspace = true }
+ arrow-array = { workspace = true, features = ["ffi"] }
+ datafusion-common = { workspace = true }
+ datafusion-expr = { workspace = true }
+-errno = { version = "0.3" }
+ geo-traits = { workspace = true }
+ sedona-common = { workspace = true }
+ sedona-expr = { workspace = true }
 diff --git a/c/sedona-s2geography/build.rs b/c/sedona-s2geography/build.rs
-index 210534cc..f12c18a8 100644
+index cbaa6dd..293f381 100644
 --- a/c/sedona-s2geography/build.rs
 +++ b/c/sedona-s2geography/build.rs
-@@ -16,8 +16,10 @@
+@@ -16,7 +16,9 @@
  // under the License.
  use std::{
      collections::HashSet,
@@ -41,8 +46,7 @@ index 210534cc..f12c18a8 100644
  };
  
  use regex::Regex;
- 
-@@ -27,6 +29,7 @@ fn main() {
+@@ -28,6 +30,7 @@ fn main() {
      // be solved by setting the environment variable in CI before building a portable
      // target like a Python package.
      let mut cmake_config = cmake::Config::new(".");
@@ -50,7 +54,7 @@ index 210534cc..f12c18a8 100644
  
      // Use RelWithDebInfo if building release with debug symbols
      if std::env::var("PROFILE").unwrap_or_default() == "release"
-@@ -72,6 +75,86 @@ fn main() {
+@@ -75,6 +78,86 @@ fn main() {
      parse_cmake_linker_flags(&dst);
  }
  
@@ -137,7 +141,7 @@ index 210534cc..f12c18a8 100644
  fn parse_cmake_linker_flags(binary_dir: &Path) {
      // e.g., libabsl_base.a
      let re_lib = Regex::new("^(lib|)([^.]+).*?(LIB|lib|a|dylib|so|dll)$").unwrap();
-@@ -90,6 +173,8 @@ fn parse_cmake_linker_flags(binary_dir: &Path) {
+@@ -92,6 +175,8 @@ fn parse_cmake_linker_flags(binary_dir: &Path) {
  
      let mut last_lib_dir = "".to_string();
  
@@ -150,56 +154,20 @@ index 210534cc..f12c18a8 100644
              continue;
          } else if let Some(lib_match) = re_linker_lib.captures(item) {
              let (_, [lib]) = lib_match.extract();
-+            if is_wasm32 && lib == "dl" {
++            if is_wasm32 && matches!(lib, "dl" | "c++" | "c++abi") {
 +                continue;
 +            }
              println!("cargo:rustc-link-lib={lib}");
              continue;
          }
 @@ -131,6 +219,10 @@ fn parse_cmake_linker_flags(binary_dir: &Path) {
-                         println!("cargo:rustc-link-search=native={dir}");
                          last_lib_dir = dir.to_string();
                      }
  
-+                    if is_wasm32 && lib == "dl" {
++                    if is_wasm32 && matches!(lib, "dl" | "c++" | "c++abi") {
 +                        continue;
 +                    }
 +
                      match suffix {
                          "lib" | "LIB" => println!("cargo:rustc-link-lib={lib}"),
                          "a" => println!("cargo:rustc-link-lib=static={lib}"),
-diff --git a/c/sedona-s2geography/Cargo.toml b/c/sedona-s2geography/Cargo.toml
-index 7b2334c2..84042b5b 100644
---- a/c/sedona-s2geography/Cargo.toml
-+++ b/c/sedona-s2geography/Cargo.toml
-@@ -43,8 +43,7 @@ sedona-testing = { workspace = true, features = ["criterion"] }
- arrow-array = { workspace = true, features = ["ffi"] }
- datafusion-common = { workspace = true }
- datafusion-expr = { workspace = true }
--errno = { version = "0.3" }
- geo-traits = { workspace = true }
- sedona-common = { workspace = true }
- sedona-expr = { workspace = true }
- sedona-extension = { workspace = true }
-diff --git a/c/sedona-s2geography/CMakeLists.txt b/c/sedona-s2geography/CMakeLists.txt
-index 7bb151e9..cce9a221 100644
---- a/c/sedona-s2geography/CMakeLists.txt
-+++ b/c/sedona-s2geography/CMakeLists.txt
-@@ -22,6 +22,17 @@ include(FetchContent)
- # Required for S2
- set(CMAKE_CXX_STANDARD 17)
- 
-+# Emscripten/OpenSSL in this browser build path is configured without pthreads.
-+# Predeclare a no-op Threads target so the static OpenSSL wrapper can resolve it.
-+if(EMSCRIPTEN)
-+  set(Threads_FOUND TRUE)
-+  set(CMAKE_THREAD_LIBS_INIT "")
-+  set(CMAKE_USE_PTHREADS_INIT FALSE)
-+  if(NOT TARGET Threads::Threads)
-+    add_library(Threads::Threads INTERFACE IMPORTED)
-+  endif()
-+endif()
-+
- # These are our two external dependencies that we don't build on the fly.
- # These can be installed with homebrew or vcpkg (see README).
- find_package(OpenSSL REQUIRED)

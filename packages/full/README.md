@@ -10,17 +10,21 @@ This package includes browser object stores for ranged remote Parquet reads and 
 npm install @cereusdb/full
 ```
 
+## Parquet support
+
+Parquet files compressed with Snappy, Gzip, Brotli, LZ4, or ZSTD can be registered.
+
 ## SQL function availability
 
 Current runtime surface:
 
-- `132` runtime `ST_*` names
-- `33` runtime `RS_*` names
+- `155` runtime `ST_*` names
+- `57` runtime `RS_*` names
 
 Included function families:
 
 - Everything from `@cereusdb/global`: core SedonaDB functions, `geo` functions, GEOS predicates/operations, `ST_Transform`, S2 geography kernels, relation joins, distance joins, and `ST_KNN`.
-- Raster registration through the host API and the full current browser raster catalog.
+- Raster registration through the host API, the core SedonaDB raster catalog, and the GDAL-backed raster functions from `sedona-raster-gdal`.
 
 Examples of available raster functions:
 
@@ -36,15 +40,39 @@ Examples of available raster functions:
 - `RS_Intersects`
 - `RS_Within`
 
+GDAL-backed raster functions:
+
+- `RS_AsGeoTiff`, `RS_FromGDALRaster` (GeoTIFF encode/decode)
+- `RS_AsRaster`, `RS_Clip`, `RS_Polygonize`
+- `RS_Resample`, `RS_ReprojectMatch`, `RS_Tile`
+- `RS_MetaData`, `RS_ZonalStats`, `RS_ZonalStatsAll`
+
 Raster ingestion notes:
 
 - `registerGeoTIFF()` and `registerRaster()` are supported in this package.
 - `registerFile()` supports `.tif` and `.tiff` in addition to Parquet and GeoJSON.
-- The current browser raster path is host-driven; SQL-side raster loader functions are not exposed.
+- The current browser raster path is host-driven. `RS_FromPath` is not exposed because the browser build has no local filesystem or GDAL network access; fetch the bytes in JavaScript and call `registerGeoTIFF()`.
+- The bundled GDAL includes the GeoTIFF, MEM and VRT raster drivers, so `RS_FromGDALRaster` decodes GeoTIFF (including COG) only.
+- Supported GeoTIFF compressions: None, Deflate, LZW, PackBits, JPEG, LERC, LERC_DEFLATE, ZSTD, and LERC_ZSTD. Other codecs (LZMA, WebP, JPEG XL) raise an error naming the missing codec.
+- See the [raster functions guide](https://github.com/tobilg/cereusdb/blob/main/packages/documentation/guides/raster-functions.md) for details.
 
 ## Object storage support
 
 Browser object stores are included in `@cereusdb/full`. Use `registerObjectStores()` to configure `http`, `s3`, `gcs`, or `azure` providers, then `registerParquetTable()` to register an exact Parquet object or provider-backed prefix.
+
+## Loading the WASM module
+
+The wasm binary ships as a separate file, `dist/wasm/cereusdb_bg.wasm`. The default entry finds it automatically, and bundlers emit it as an asset.
+
+If you host the wasm yourself, or your bundler inlines assets into large `data:application/wasm;base64,...` strings, use the `external` entry. It has no built-in wasm reference and requires `wasmUrl` or `wasmSource`:
+
+```ts
+import { CereusDB } from '@cereusdb/full/external';
+
+const db = await CereusDB.create({ wasmUrl: '/wasm/cereusdb_bg.wasm' });
+```
+
+Copy `node_modules/@cereusdb/full/dist/wasm/cereusdb_bg.wasm` to your static assets, or import its URL with Vite: `import wasmUrl from '@cereusdb/full/wasm?url'`. See the [WASM loading guide](https://github.com/tobilg/cereusdb/blob/main/packages/documentation/guides/wasm-loading.md) for details.
 
 ## JS / TS API
 

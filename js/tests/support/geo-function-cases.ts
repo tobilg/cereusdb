@@ -193,9 +193,23 @@ const MANUAL_CASES: Record<string, GeoFunctionCase> = {
     execution: 'in-process',
     expectation: { kind: 'field-equals', field: 'value', value: 2 },
   },
+  st_linestringfromtext: {
+    name: 'st_linestringfromtext',
+    query: "SELECT ST_AsText(ST_LineStringFromText('LINESTRING(0 0, 1 1)')) AS value",
+    source: 'manual',
+    execution: 'in-process',
+    expectation: { kind: 'field-equals', field: 'value', value: 'LINESTRING(0 0,1 1)' },
+  },
   st_numinteriorrings: {
     name: 'st_numinteriorrings',
     query: "SELECT ST_NumInteriorRings(ST_GeomFromText('POLYGON((0 0, 6 0, 6 6, 0 6, 0 0), (2 2, 4 2, 4 4, 2 4, 2 2))')) AS value",
+    source: 'manual',
+    execution: 'in-process',
+    expectation: { kind: 'field-equals', field: 'value', value: 1 },
+  },
+  st_numinteriorring: {
+    name: 'st_numinteriorring',
+    query: "SELECT ST_NumInteriorRing(ST_GeomFromText('POLYGON((0 0, 6 0, 6 6, 0 6, 0 0), (2 2, 4 2, 4 4, 2 4, 2 2))')) AS value",
     source: 'manual',
     execution: 'in-process',
     expectation: { kind: 'field-equals', field: 'value', value: 1 },
@@ -206,6 +220,22 @@ const MANUAL_CASES: Record<string, GeoFunctionCase> = {
     source: 'manual',
     execution: 'in-process',
     expectation: { kind: 'field-equals', field: 'value', value: 4 },
+  },
+  // The upstream docs examples use geography input, which needs the S2 kernels
+  // (global/full only); the geometry path is available in every package.
+  st_pointonsurface: {
+    name: 'st_pointonsurface',
+    query: "SELECT ST_AsText(ST_PointOnSurface(ST_GeomFromText('POLYGON((0 0,4 0,4 4,0 4,0 0))'))) AS value",
+    source: 'manual',
+    execution: 'in-process',
+    expectation: { kind: 'field-equals', field: 'value', value: 'POINT(2 2)' },
+  },
+  st_reduceprecision: {
+    name: 'st_reduceprecision',
+    query: "SELECT ST_AsText(ST_ReducePrecision(ST_GeomFromText('POINT(1.123456 2.654321)'), 0.01)) AS value",
+    source: 'manual',
+    execution: 'in-process',
+    expectation: { kind: 'field-equals', field: 'value', value: 'POINT(1.12 2.65)' },
   },
   st_transform: {
     name: 'st_transform',

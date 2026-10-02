@@ -1,8 +1,8 @@
 diff --git a/c/sedona-gdal/Cargo.toml b/c/sedona-gdal/Cargo.toml
-index 115bdab..ac717fb 100644
+index b8bf4ce..929c169 100644
 --- a/c/sedona-gdal/Cargo.toml
 +++ b/c/sedona-gdal/Cargo.toml
-@@ -1,42 +1,20 @@
+@@ -1,39 +1,22 @@
 -# Licensed to the Apache Software Foundation (ASF) under one
 -# or more contributor license agreements.  See the NOTICE file
 -# distributed with this work for additional information
@@ -35,7 +35,7 @@ index 115bdab..ac717fb 100644
 -readme.workspace = true
 -edition.workspace = true
 -rust-version.workspace = true
-+version = "0.4.0"
++version = "0.4.1"
 +license = "Apache-2.0"
 +edition = "2021"
 +description = "Sedona GDAL integration (WASM-patched)"
@@ -43,20 +43,27 @@ index 115bdab..ac717fb 100644
  [dependencies]
  gdal-sys = { version = "0.12.0", optional = true }
 -libloading = { workspace = true }
+-sedona-raster = { workspace = true }
 -thiserror = { workspace = true }
 +thiserror = "2"
++
++# Sedona crates resolved relative to the prepared sedona-db tree.
++sedona-raster = { version = "0.4.1", path = "../../rust/sedona-raster" }
 +
 +[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 +libloading = "0.9"
  
  [features]
  default = ["gdal-sys"]
- gdal-sys = ["dep:gdal-sys"]
+@@ -41,6 +24,3 @@ gdal-sys = ["dep:gdal-sys"]
+ # Enable bindgen for GDAL versions without pre-built bindings (e.g., GDAL 3.13+).
+ # Use: cargo build --features bindgen
+ bindgen = ["gdal-sys/bindgen"]
 -
 -[dev-dependencies]
 -sedona-testing = { workspace = true }
 diff --git a/c/sedona-gdal/src/gdal_api.rs b/c/sedona-gdal/src/gdal_api.rs
-index c4baa6b..a6d39d4 100644
+index 84f1e86..9bec624 100644
 --- a/c/sedona-gdal/src/gdal_api.rs
 +++ b/c/sedona-gdal/src/gdal_api.rs
 @@ -16,23 +16,20 @@
@@ -72,7 +79,7 @@ index c4baa6b..a6d39d4 100644
 +#[cfg(not(target_arch = "wasm32"))]
  use crate::dyn_load;
  use crate::errors::{GdalError, GdalInitLibraryError};
- use crate::gdal_dyn_bindgen::SedonaGdalApi;
+ use crate::gdal_dyn_bindgen::{GDALTransformerFunc, SedonaGdalApi};
  
 -/// Invoke a function pointer from the `SedonaGdalApi` struct.
 -///
@@ -89,7 +96,7 @@ index c4baa6b..a6d39d4 100644
  macro_rules! call_gdal_api {
      ($api:expr, $func:ident $(, $arg:expr)*) => {
          if let Some(func) = $api.inner.$func {
-@@ -48,14 +45,13 @@ pub(crate) use call_gdal_api;
+@@ -48,14 +45,50 @@ pub(crate) use call_gdal_api;
  #[derive(Debug)]
  pub struct GdalApi {
      pub(crate) inner: SedonaGdalApi,
@@ -101,12 +108,49 @@ index c4baa6b..a6d39d4 100644
      name: String,
  }
  
++/// GDAL symbols the static WASM build links directly that gdal-sys does not bind.
++/// Signatures match the corresponding `SedonaGdalApi` fields.
++#[cfg(all(target_arch = "wasm32", feature = "gdal-sys"))]
++mod wasm_extra {
++    use std::os::raw::{c_char, c_double, c_int};
++
++    use gdal_sys::{CPLErr, GDALDataType, GDALDatasetH, GDALRasterBandH};
++
++    extern "C" {
++        pub fn VRTCreate(nXSize: c_int, nYSize: c_int) -> GDALDatasetH;
++        #[allow(clippy::too_many_arguments)]
++        pub fn VRTAddSimpleSource(
++            hVRTBand: GDALRasterBandH,
++            hSrcBand: GDALRasterBandH,
++            nSrcXOff: c_int,
++            nSrcYOff: c_int,
++            nSrcXSize: c_int,
++            nSrcYSize: c_int,
++            nDstXOff: c_int,
++            nDstYOff: c_int,
++            nDstXSize: c_int,
++            nDstYSize: c_int,
++            pszResampling: *const c_char,
++            dfNoDataValue: c_double,
++        ) -> CPLErr::Type;
++        #[link_name = "_ZN10MEMDataset6CreateEPKciii12GDALDataTypePPc"]
++        pub fn MEMDatasetCreate(
++            pszFilename: *const c_char,
++            nXSize: c_int,
++            nYSize: c_int,
++            nBandsIn: c_int,
++            eType: GDALDataType::Type,
++            papszOptions: *mut *mut c_char,
++        ) -> GDALDatasetH;
++    }
++}
++
  impl GdalApi {
 +    #[cfg(not(target_arch = "wasm32"))]
      pub fn try_from_shared_library(shared_library: PathBuf) -> Result<Self, GdalInitLibraryError> {
          let (lib, inner) = dyn_load::load_gdal_from_path(&shared_library)?;
          Ok(Self {
-@@ -65,6 +61,7 @@ impl GdalApi {
+@@ -65,6 +98,7 @@ impl GdalApi {
          })
      }
  
@@ -114,7 +158,7 @@ index c4baa6b..a6d39d4 100644
      pub fn try_from_current_process() -> Result<Self, GdalInitLibraryError> {
          let (lib, inner) = dyn_load::load_gdal_from_current_process()?;
          Ok(Self {
-@@ -74,6 +71,111 @@ impl GdalApi {
+@@ -74,6 +108,125 @@ impl GdalApi {
          })
      }
  
@@ -212,10 +256,24 @@ index c4baa6b..a6d39d4 100644
 +            set_fn!(CPLGetLastErrorNo, gdal_sys::CPLGetLastErrorNo);
 +            set_fn!(CPLGetLastErrorMsg, gdal_sys::CPLGetLastErrorMsg);
 +            set_fn!(CPLErrorReset, gdal_sys::CPLErrorReset);
-+        }
 +
-+        // Note: MEMDatasetCreate and VRT* functions are not available via gdal-sys.
-+        // They use C++ mangled names that gdal-sys doesn't expose.
++            // Used by the sedona-raster-gdal functions (RS_Resample, RS_Clip, ...).
++            set_fn!(GDALGetRasterNoDataValueAsInt64, gdal_sys::GDALGetRasterNoDataValueAsInt64);
++            set_fn!(GDALGetRasterNoDataValueAsUInt64, gdal_sys::GDALGetRasterNoDataValueAsUInt64);
++            set_fn!(OSRExportToWkt, gdal_sys::OSRExportToWkt);
++            set_fn!(GDALCreateGenImgProjTransformer, gdal_sys::GDALCreateGenImgProjTransformer);
++            set_fn!(GDALDestroyGenImgProjTransformer, gdal_sys::GDALDestroyGenImgProjTransformer);
++            set_fn!(GDALGenImgProjTransform, gdal_sys::GDALGenImgProjTransform);
++            set_fn!(GDALSuggestedWarpOutput, gdal_sys::GDALSuggestedWarpOutput);
++            set_fn!(GDALReprojectImage, gdal_sys::GDALReprojectImage);
++
++            // Exported by the static libgdal but not part of gdal-sys's bindings.
++            set_fn!(VRTCreate, wasm_extra::VRTCreate);
++            set_fn!(VRTAddSimpleSource, wasm_extra::VRTAddSimpleSource);
++            // GDAL 3.10 predates the MEMCreate C API, so link the C++
++            // MEMDataset::Create directly, as dyn_load does on native builds.
++            set_fn!(MEMDatasetCreate, wasm_extra::MEMDatasetCreate);
++        }
 +
 +        Ok(Self {
 +            inner,
@@ -226,11 +284,38 @@ index c4baa6b..a6d39d4 100644
      pub fn name(&self) -> &str {
          &self.name
      }
+diff --git a/c/sedona-gdal/src/gdal_dyn_bindgen.rs b/c/sedona-gdal/src/gdal_dyn_bindgen.rs
+index 6836e38..cdd078e 100644
+--- a/c/sedona-gdal/src/gdal_dyn_bindgen.rs
++++ b/c/sedona-gdal/src/gdal_dyn_bindgen.rs
+@@ -271,7 +271,9 @@ pub(crate) struct SedonaGdalApi {
+             papszSiblingFiles: *const *const c_char,
+         ) -> GDALDatasetH,
+     >,
+-    pub GDALClose: Option<unsafe extern "C" fn(hDS: GDALDatasetH)>,
++    // Returns CPLErr since GDAL 3.7. The result is ignored, but WASM checks
++    // indirect call signatures, so the return type must match the C function.
++    pub GDALClose: Option<unsafe extern "C" fn(hDS: GDALDatasetH) -> CPLErr>,
+     pub GDALGetRasterXSize: Option<unsafe extern "C" fn(hDataset: GDALDatasetH) -> c_int>,
+     pub GDALGetRasterYSize: Option<unsafe extern "C" fn(hDataset: GDALDatasetH) -> c_int>,
+     pub GDALGetRasterCount: Option<unsafe extern "C" fn(hDataset: GDALDatasetH) -> c_int>,
+@@ -343,8 +345,9 @@ pub(crate) struct SedonaGdalApi {
+             nBXSize: c_int,
+             nBYSize: c_int,
+             eBDataType: GDALDataType,
+-            nPixelSpace: GSpacing,
+-            nLineSpace: GSpacing,
++            // `int` in the C API (unlike GDALRasterIOEx); WASM checks the exact signature.
++            nPixelSpace: c_int,
++            nLineSpace: c_int,
+         ) -> CPLErr,
+     >,
+     pub GDALRasterIOEx: Option<
 diff --git a/c/sedona-gdal/src/global.rs b/c/sedona-gdal/src/global.rs
-index 9365ef8..a289198 100644
+index 3de26d7..6246d03 100644
 --- a/c/sedona-gdal/src/global.rs
 +++ b/c/sedona-gdal/src/global.rs
-@@ -65,11 +65,11 @@ impl GdalApiBuilder {
+@@ -90,11 +90,11 @@ impl GdalApiBuilder {
      }
  
      /// Build a [`GdalApi`] with the configured options.
@@ -246,7 +331,7 @@ index 9365ef8..a289198 100644
          let api = if let Some(shared_library) = &self.shared_library {
              GdalApi::try_from_shared_library(shared_library.clone())?
          } else {
-@@ -78,9 +78,6 @@ impl GdalApiBuilder {
+@@ -103,9 +103,6 @@ impl GdalApiBuilder {
  
          #[cfg(feature = "gdal-sys")]
          let get_gdal_version_info = |arg: &str| unsafe {
@@ -256,7 +341,7 @@ index 9365ef8..a289198 100644
              let c_arg = std::ffi::CString::new(arg).unwrap();
              let c_version = gdal_sys::GDALVersionInfo(c_arg.as_ptr());
              std::ffi::CStr::from_ptr(c_version)
-@@ -131,11 +128,11 @@ fn get_global_gdal_api() -> Result<&'static GdalApi, GdalInitLibraryError> {
+@@ -156,11 +153,11 @@ fn get_global_gdal_api() -> Result<&'static GdalApi, GdalInitLibraryError> {
          .unwrap_or(&GdalApiBuilder::default())
          .build()?;
  
@@ -274,7 +359,7 @@ index 9365ef8..a289198 100644
          let Some(gdal_all_register) = api.inner.GDALAllRegister else {
              return Err(GdalInitLibraryError::LibraryError(
 diff --git a/c/sedona-gdal/src/lib.rs b/c/sedona-gdal/src/lib.rs
-index 0646a24..8fad0e0 100644
+index 78b3d2f..7c91c02 100644
 --- a/c/sedona-gdal/src/lib.rs
 +++ b/c/sedona-gdal/src/lib.rs
 @@ -16,6 +16,7 @@
@@ -286,10 +371,10 @@ index 0646a24..8fad0e0 100644
  pub mod gdal_dyn_bindgen;
  
 diff --git a/c/sedona-proj/Cargo.toml b/c/sedona-proj/Cargo.toml
-index 072f15b..c6b7081 100644
+index 9fe4397..433042f 100644
 --- a/c/sedona-proj/Cargo.toml
 +++ b/c/sedona-proj/Cargo.toml
-@@ -1,62 +1,37 @@
+@@ -1,46 +1,28 @@
 -# Licensed to the Apache Software Foundation (ASF) under one
 -# or more contributor license agreements.  See the NOTICE file
 -# distributed with this work for additional information
@@ -329,11 +414,8 @@ index 072f15b..c6b7081 100644
 -[dev-dependencies]
 -approx = { workspace = true }
 -geo-types = { workspace = true }
--rstest = { workspace = true }
 -wkb = { workspace = true }
--sedona-testing = { workspace = true, features = ["criterion"] }
--criterion = { workspace = true}
-+version = "0.4.0"
++version = "0.4.1"
 +license = "Apache-2.0"
 +edition = "2021"
 +description = "Sedona PROJ integration (WASM-patched)"
@@ -347,42 +429,21 @@ index 072f15b..c6b7081 100644
  [dependencies]
 -libloading = { workspace = true }
 -serde_json = { workspace = true }
--arrow-schema = { workspace = true }
--arrow-array = { workspace = true }
--datafusion-common = { workspace = true }
--datafusion-expr = { workspace = true }
 -geo-traits = { workspace = true }
 +serde_json = "1"
-+arrow-schema = "57.1.0"
-+arrow-array = "57.1.0"
-+datafusion-common = { version = "52.5.0", default-features = false }
-+datafusion-expr = "52.5.0"
 +geo-traits = "0.3.0"
  proj-sys = { version = "0.26.0", optional = true }
--sedona-common = { workspace = true }
--sedona-expr = { workspace = true }
--sedona-functions = { workspace = true }
 -sedona-geometry = { workspace = true }
--sedona-schema = { workspace = true }
 -thiserror = { workspace = true }
--wkb = { workspace = true }
 +thiserror = "2"
-+wkb = "0.9.2"
 +
 +# Sedona crates resolved relative to the prepared sedona-db tree.
-+sedona-common = { version = "0.4.0", path = "../../rust/sedona-common" }
-+sedona-expr = { version = "0.4.0", path = "../../rust/sedona-expr" }
-+sedona-functions = { version = "0.4.0", path = "../../rust/sedona-functions" }
-+sedona-geometry = { version = "0.4.0", path = "../../rust/sedona-geometry" }
-+sedona-schema = { version = "0.4.0", path = "../../rust/sedona-schema" }
- 
--[[bench]]
--name = "proj-functions"
--harness = false
++sedona-geometry = { version = "0.4.1", path = "../../rust/sedona-geometry" }
++
 +[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 +libloading = "0.9"
 diff --git a/c/sedona-proj/src/lib.rs b/c/sedona-proj/src/lib.rs
-index 3cffe6f..632b116 100644
+index 6f5a784..bd9e4f1 100644
 --- a/c/sedona-proj/src/lib.rs
 +++ b/c/sedona-proj/src/lib.rs
 @@ -14,6 +14,7 @@
@@ -538,10 +599,10 @@ index b267af4..5d36eae 100644
          }
      }
 diff --git a/c/sedona-proj/src/transform.rs b/c/sedona-proj/src/transform.rs
-index 28e231f..75af6c4 100644
+index 7366fc0..d1af617 100644
 --- a/c/sedona-proj/src/transform.rs
 +++ b/c/sedona-proj/src/transform.rs
-@@ -108,11 +108,14 @@ impl ProjCrsEngineBuilder {
+@@ -143,11 +143,14 @@ impl ProjCrsEngineBuilder {
  
      /// Build a [ProjCrsEngine] with the specified options
      pub fn build(&self) -> Result<ProjCrsEngine, SedonaProjError> {

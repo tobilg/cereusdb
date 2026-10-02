@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -10,6 +10,9 @@ const execFileAsync = promisify(execFile);
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..');
 const PACKAGE_VARIANTS = ['minimal', 'standard', 'global', 'full'];
+// jsDelivr refuses to serve npm files larger than 50 MB, which breaks the
+// default wasm loader for anyone importing the package from that CDN.
+const MAX_WASM_BYTES = 50_000_000;
 const arg = process.argv[2] ?? 'all';
 const variants = arg === 'all' ? PACKAGE_VARIANTS : [arg];
 
@@ -80,6 +83,34 @@ async function unpackTarball(tarballPath, targetDir) {
   await execFileAsync('tar', ['-xzf', tarballPath, '-C', targetDir]);
 }
 
+async function smokeExternalEntry(variant, packageRoot, wasmSource) {
+  const externalLoader = await readFile(
+    resolve(packageRoot, 'dist', 'wasm', 'cereusdb-external.js'),
+    'utf8',
+  );
+
+  if (externalLoader.includes('cereusdb_bg.wasm')) {
+    throw new Error(`${variant} external loader still references cereusdb_bg.wasm`);
+  }
+
+  const externalUrl = pathToFileURL(resolve(packageRoot, 'dist', 'external.js')).href;
+  const { CereusDB } = await import(externalUrl);
+
+  let missingSourceError;
+  try {
+    await CereusDB.create();
+  } catch (error) {
+    missingSourceError = error;
+  }
+
+  if (!String(missingSourceError?.message).includes('requires CereusDB.create({ wasmUrl })')) {
+    throw new Error(`${variant} external entry did not reject create() without a wasm source`);
+  }
+
+  const db = await CereusDB.create({ wasmSource });
+  await runQuery(db, 'SELECT 1 AS ok', [{ ok: 1 }], `${variant} external SELECT 1`);
+}
+
 async function smokeVariant(variant) {
   const packageDir = resolve(REPO_ROOT, 'packages', variant);
   const packageIndex = resolve(packageDir, 'dist', 'index.js');
@@ -95,10 +126,26 @@ async function smokeVariant(variant) {
 
     const packageRoot = resolve(unpackDir, 'package');
     const wasmPath = resolve(packageRoot, 'dist', 'wasm', 'cereusdb_bg.wasm');
+    const { size: wasmBytes } = await stat(wasmPath);
+    if (wasmBytes > MAX_WASM_BYTES) {
+      throw new Error(
+        `${variant} wasm is ${wasmBytes} bytes, above the ${MAX_WASM_BYTES}-byte limit that CDNs such as jsDelivr enforce`,
+      );
+    }
     const moduleUrl = pathToFileURL(resolve(packageRoot, 'dist', 'index.js')).href;
     const { CereusDB } = await import(moduleUrl);
     const wasmSource = await readFile(wasmPath);
     const db = await CereusDB.create({ wasmSource });
+    const { version: packageVersion } = JSON.parse(
+      await readFile(resolve(packageRoot, 'package.json'), 'utf8'),
+    );
+    const expectedVersion = `CereusDB ${packageVersion}`;
+
+    if (db.version() !== expectedVersion) {
+      throw new Error(
+        `${variant} runtime reports "${db.version()}" but package version is "${expectedVersion}"`,
+      );
+    }
 
     await runQuery(db, 'SELECT 1 AS ok', [{ ok: 1 }], `${variant} SELECT 1`);
     await runQuery(
@@ -230,6 +277,8 @@ async function smokeVariant(variant) {
     );
     await runQuery(db, 'DROP TABLE smoke_table', [], `${variant} DROP TABLE`);
     await runQuery(db, 'DROP TABLE IF EXISTS smoke_table', [], `${variant} DROP TABLE IF EXISTS`);
+
+    await smokeExternalEntry(variant, packageRoot, wasmSource);
 
     console.log(`[smoke] ${variant}: ok`);
   } finally {

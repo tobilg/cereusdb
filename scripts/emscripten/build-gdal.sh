@@ -59,6 +59,7 @@ emcmake cmake "$GDAL_SRC" \
     -DGDAL_USE_CURL=OFF \
     -DGDAL_USE_GEOS=ON \
     -DGDAL_USE_ZLIB=ON \
+    -DGDAL_USE_ZSTD=ON \
     -DGDAL_USE_EXPAT=ON \
     \
     -DGEOS_INCLUDE_DIR="$INSTALL_DIR/include" \
@@ -69,6 +70,8 @@ emcmake cmake "$GDAL_SRC" \
     -DSQLITE3_LIBRARY="$INSTALL_DIR/lib/libsqlite3.a" \
     -DZLIB_INCLUDE_DIR="$INSTALL_DIR/include" \
     -DZLIB_LIBRARY="$INSTALL_DIR/lib/libz.a" \
+    -DZSTD_INCLUDE_DIR="$INSTALL_DIR/include" \
+    -DZSTD_LIBRARY="$INSTALL_DIR/lib/libzstd.a" \
     -DEXPAT_INCLUDE_DIR="$INSTALL_DIR/include" \
     -DEXPAT_LIBRARY="$INSTALL_DIR/lib/libexpat.a" \
     \

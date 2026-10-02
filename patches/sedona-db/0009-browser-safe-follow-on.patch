@@ -1,20 +1,20 @@
 diff --git a/rust/sedona-functions/src/lib.rs b/rust/sedona-functions/src/lib.rs
-index af5bea9c..c51442ab 100644
+index 5ce240d..73419df 100644
 --- a/rust/sedona-functions/src/lib.rs
 +++ b/rust/sedona-functions/src/lib.rs
-@@ -22,6 +22,7 @@ pub mod register;
- mod sd_format;
+@@ -21,6 +21,7 @@ mod sd_format;
  pub mod sd_order;
+ pub mod sd_order_lnglat;
  mod sd_simplifystorage;
 +mod st_asewkt;
  mod st_affine;
  mod st_affine_helpers;
  pub mod st_analyze_agg;
 diff --git a/rust/sedona-functions/src/register.rs b/rust/sedona-functions/src/register.rs
-index 233c0ffd..f67b65e6 100644
+index 221bf05..5da2c88 100644
 --- a/rust/sedona-functions/src/register.rs
 +++ b/rust/sedona-functions/src/register.rs
-@@ -40,6 +40,7 @@ pub fn default_function_set() -> FunctionSet {
+@@ -43,6 +43,7 @@ pub fn default_function_set() -> FunctionSet {
          crate::sd_simplifystorage::sd_simplifystorage_udf,
          crate::st_affine::st_affine_udf,
          crate::st_asbinary::st_asbinary_udf,
@@ -24,7 +24,7 @@ index 233c0ffd..f67b65e6 100644
          crate::st_azimuth::st_azimuth_udf,
 diff --git a/rust/sedona-functions/src/st_asewkt.rs b/rust/sedona-functions/src/st_asewkt.rs
 new file mode 100644
-index 00000000..40a08e5f
+index 0000000..bee93a5
 --- /dev/null
 +++ b/rust/sedona-functions/src/st_asewkt.rs
 @@ -0,0 +1,304 @@

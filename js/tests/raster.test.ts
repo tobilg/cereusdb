@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -5,6 +7,11 @@ import {
   type RasterFunctionCase,
 } from './support/raster-function-cases';
 import { targetPackage } from './support/package';
+import {
+  LERC_ZSTD_GEOTIFF_PATH,
+  UNSUPPORTED_CODEC_GEOTIFF_PATH,
+  ZSTD_GEOTIFF_PATH,
+} from './support/paths';
 import type { TestContext } from './support/test-fixtures';
 import { createTestContext } from './support/test-fixtures';
 import {
@@ -97,6 +104,58 @@ describe('TypeScript WASM raster support', () => {
         height: 10,
         band_count: 1,
         pixel_type: 'UNSIGNED_8BITS',
+      },
+    ]);
+  });
+
+  it.each([
+    ['ZSTD', ZSTD_GEOTIFF_PATH],
+    ['LERC_ZSTD', LERC_ZSTD_GEOTIFF_PATH],
+  ])('registers %s-compressed GeoTIFFs', async (codec, path) => {
+    const tableName = `geotiff_${codec.toLowerCase()}_full`;
+    ctx.db.registerGeoTIFF(tableName, await readFile(path));
+
+    // Fixture pixels hold (row * 32 + col) / 10; pixel (row 3, col 5) is 10.1.
+    const rows = await ctx.db.sqlJSON(`
+      SELECT
+        RS_Width(raster) AS width,
+        RS_BandPixelType(raster, 1) AS pixel_type,
+        RS_Value(raster, ST_SetSRID(ST_Point(10.055, 49.965), 4326), 1) AS value
+      FROM ${tableName}
+    `);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ width: 32, pixel_type: 'REAL_32BITS' });
+    expect(Number(rows[0]?.value)).toBeCloseTo(10.1, 5);
+  });
+
+  it('throws a codec error for GeoTIFFs with unsupported compression', async () => {
+    // GDAL reports the missing codec on stderr. This used to hang forever
+    // because the WASI fd_write shim reported zero bytes written.
+    const bytes = await readFile(UNSUPPORTED_CODEC_GEOTIFF_PATH);
+
+    expect(() => ctx.db.registerGeoTIFF('unsupported_codec_full', bytes)).toThrow(
+      /missing codec LZMA/,
+    );
+  });
+
+  it('runs GDAL-backed raster functions on registered GeoTIFF buffers', async () => {
+    const tableName = 'geotiff_gdal_functions_full';
+    ctx.db.registerGeoTIFF(tableName, ctx.geotiffBytes);
+
+    const rows = await ctx.db.sqlJSON(`
+      SELECT
+        RS_Width(RS_Resample(raster, 5, 5, false, 'NearestNeighbor')) AS resampled_width,
+        RS_Width(RS_FromGDALRaster(RS_AsGeoTiff(raster))) AS round_trip_width,
+        RS_NumBands(RS_FromGDALRaster(RS_AsGeoTiff(raster))) AS round_trip_bands
+      FROM ${tableName}
+    `);
+
+    expect(rows).toEqual([
+      {
+        resampled_width: 5,
+        round_trip_width: 10,
+        round_trip_bands: 1,
       },
     ]);
   });

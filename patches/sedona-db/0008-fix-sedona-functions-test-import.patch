@@ -1,8 +1,8 @@
 diff --git a/rust/sedona-functions/src/st_geomfromewkb.rs b/rust/sedona-functions/src/st_geomfromewkb.rs
-index 493cc1b..7942913 100644
+index 4b5c12d..dd4c846 100644
 --- a/rust/sedona-functions/src/st_geomfromewkb.rs
 +++ b/rust/sedona-functions/src/st_geomfromewkb.rs
-@@ -155,6 +155,7 @@ mod tests {
+@@ -154,6 +154,7 @@ mod tests {
      use arrow_array::BinaryArray;
      use datafusion_common::scalar::ScalarValue;
      use datafusion_expr::ScalarUDF;

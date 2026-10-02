@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 S2_SRC="$ROOT_DIR/deps/sedona-db/c/sedona-s2geography"
-VCPKG_ROOT="${VCPKG_ROOT:-$ROOT_DIR/deps/vcpkg}"
+export VCPKG_ROOT="${CEREUSDB_VCPKG_ROOT:-$ROOT_DIR/deps/vcpkg}"
 VCPKG_TARGET_TRIPLET="${VCPKG_TARGET_TRIPLET:-wasm32-emscripten}"
 VCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR:-$ROOT_DIR/build/vcpkg/s2-installed}"
 

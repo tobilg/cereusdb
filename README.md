@@ -29,12 +29,19 @@ The interactive Playground fro CereusDB can be found at [cereusdb-playground.gh.
 
 | Build | Features | Raw size | Gzipped | Brotli |
 |---|---|---|---|---|
-| `minimal` | Core + `geo` + GEOS + spatial joins / `ST_KNN` MVP | 21.3 MB | 6.2 MB | 4.0 MB |
-| `standard` | `minimal` + PROJ / `ST_Transform` | 40.6 MB | 10.8 MB | 6.0 MB |
-| `global` | `standard` + opt-in S2 geography kernels | 42.9 MB | 11.8 MB | 6.7 MB |
-| `full` | `global` + GDAL-backed raster ingestion and the full current local `RS_*` catalog | 49.5 MB | 14.4 MB | 8.5 MB |
+| `minimal` | Core + `geo` + GEOS + spatial joins / `ST_KNN` MVP | 22.2 MB | 6.5 MB | 4.2 MB |
+| `standard` | `minimal` + PROJ / `ST_Transform` | 28.1 MB | 9.3 MB | 6.5 MB |
+| `global` | `standard` + opt-in S2 geography kernels | 30.7 MB | 10.5 MB | 7.3 MB |
+| `full` | `global` + GDAL-backed raster ingestion and the `RS_*` raster catalog | 37.7 MB | 13.2 MB | 9.2 MB |
 
-`full` is the maximum browser build target. It now combines GEOS, PROJ, S2, and GDAL. It adds browser-side GeoTIFF/TIFF upload plus the full current SedonaDB/Rust raster SQL surface (`33` `RS_*` functions), including `RS_Contains`, `RS_Intersects`, and `RS_Within`. Raster ingestion remains host-driven through `registerGeoTIFF()` / `registerRaster()`. SQL-side raster loader functions are not exposed in the browser WASM build.
+All packages read Parquet compressed with Snappy, Gzip, Brotli, LZ4, or ZSTD.
+
+Packages with PROJ embed PROJ's `proj.db` zstd-compressed (about 1.2 MB instead
+of 9 MB) and inflate it in memory the first time a CRS is resolved. Release
+checks keep every wasm binary under 50 MB, the per-file limit of CDNs such as
+jsDelivr.
+
+`full` is the maximum browser build target. It now combines GEOS, PROJ, S2, and GDAL. It adds browser-side GeoTIFF/TIFF upload plus the SedonaDB raster SQL surface (`57` `RS_*` functions), including `RS_Contains`, `RS_Intersects`, `RS_Within`, and GDAL-backed functions such as `RS_Clip`, `RS_Resample`, and `RS_ZonalStats`. GeoTIFFs compressed with Deflate, LZW, PackBits, JPEG, LERC, ZSTD, or LERC_ZSTD are supported. Raster ingestion remains host-driven through `registerGeoTIFF()` / `registerRaster()`; `RS_FromPath` is not exposed in the browser WASM build.
 
 S2 geography is available in `global` and `full`. The
 verified native `sedona-s2geography` scalar kernel family is exposed there,
@@ -110,6 +117,12 @@ const projected = await db.sqlJSON(`
 await db.registerRemoteParquet('cities', 'https://example.com/cities.parquet');
 const cities = await db.sqlJSON("SELECT * FROM cities WHERE ST_Within(geometry, ST_Buffer(ST_Point(13.4, 52.5), 0.5))");
 ```
+
+The wasm binary ships as a separate file next to the JavaScript loader. To host
+it yourself and keep bundlers from emitting or inlining it, import from the
+`external` entry (for example `@cereusdb/standard/external`) and pass `wasmUrl`
+or `wasmSource` to `CereusDB.create()`. See the
+[WASM loading guide](packages/documentation/guides/wasm-loading.md).
 
 For local browser examples without npm packaging, the generated wasm-bindgen
 loader remains available under `dist/<package>/cereusdb.js` and the `pkg/`
@@ -341,12 +354,19 @@ Signatures and descriptions below are sourced from the [Apache SedonaDB SQL func
 
 ### Raster functions (`full`)
 
-33 `RS_*` functions via GDAL-backed raster support. The `full` package matches the
-current local SedonaDB/Rust raster catalog and includes raster metadata,
+57 `RS_*` functions. The core SedonaDB raster catalog covers raster metadata,
 georeference, pixel geometry, and predicate functions such as `RS_Width`,
 `RS_Height`, `RS_NumBands`, `RS_BandPixelType`, `RS_CRS`, `RS_GeoReference`,
 `RS_PixelAsPoint`, `RS_PixelAsPolygon`, `RS_Contains`, `RS_Intersects`, and
-`RS_Within`.
+`RS_Within`. The GDAL-backed functions from `sedona-raster-gdal` add
+`RS_AsGeoTiff`, `RS_AsRaster`, `RS_Clip`, `RS_FromGDALRaster`, `RS_MetaData`,
+`RS_Polygonize`, `RS_ReprojectMatch`, `RS_Resample`, `RS_Tile`, `RS_ZonalStats`,
+and `RS_ZonalStatsAll`.
+
+The bundled GDAL includes the GeoTIFF, MEM, and VRT raster drivers, so raster
+bytes are read and written as GeoTIFF. `RS_FromPath` is not exposed because the
+browser build has no local filesystem or GDAL network access. See the
+[raster functions guide](packages/documentation/guides/raster-functions.md).
 
 ### Comparison with native SedonaDB
 
@@ -370,25 +390,31 @@ Current generated runtime counts per browser artifact:
 
 | Package | Runtime `ST_*` | Runtime `RS_*` | What it adds | What it omits |
 |---|---:|---:|---|---|
-| `minimal` | 130 | 0 | Core, `geo`, GEOS, spatial joins, `ST_KNN` MVP | `ST_Transform`, all raster, all S2 geography kernels |
-| `standard` | 131 | 0 | `ST_Transform` | all raster, all S2 geography kernels |
-| `global` | 132 | 0 | `ST_Transform`, 18 S2 geography kernels, S2 `sd_order` override | all raster |
-| `full` | 132 | 33 | `ST_Transform`, 18 S2 geography kernels, S2 `sd_order` override, full current raster catalog | nothing from the current local SedonaDB docs set |
+| `minimal` | 150 | 0 | Core, `geo`, GEOS, spatial joins, `ST_KNN` MVP | `ST_Transform`, all raster, all S2 geography kernels |
+| `standard` | 151 | 0 | `ST_Transform` | all raster, all S2 geography kernels |
+| `global` | 155 | 0 | `ST_Transform`, S2 geography kernels, S2 `sd_order` override | all raster |
+| `full` | 155 | 57 | `ST_Transform`, S2 geography kernels, S2 `sd_order` override, core and GDAL-backed raster catalogs | `RS_FromPath` (no filesystem or GDAL network access in the browser) |
 
 Common runtime-only names exposed across the packages include:
 
 - Compatibility aliases: `ST_AsWKB`, `ST_AsWKT`, `ST_GeogFromText`, `ST_GeomFromText`, `ST_GeometryFromText`
 - Geography additions: `ST_GeogFromEWKB`, `ST_GeogFromEWKT`, `ST_GeogToGeometry`, `ST_GeomToGeography`
-- Local broad-doc extensions: `ST_AsEWKT`, `ST_Expand`, `ST_ExteriorRing`, `ST_GeomFromGeoJSON`, `ST_MakeEnvelope`
+- Local broad-doc extensions: `ST_AsEWKT`, `ST_Expand`, `ST_GeomFromGeoJSON`, `ST_MakeEnvelope`
 - Runtime helpers: `ST_GeomFromWKBUnchecked`, `ST_NRings`, `ST_NumInteriorRings`, `ST_NumPoints`
+- Upstream aliases without docs pages: `ST_LineStringFromText`, `ST_NumInteriorRing`
 
 ## Building
 
 ### Prerequisites
 
 - Rust (1.88+) with `wasm32-unknown-unknown` target
-- [wasm-pack](https://rustwasm.github.io/wasm-pack/)
-- [Emscripten](https://emscripten.org/) (for `minimal`, `standard`, `global`, or `full`)
+- [wasm-pack](https://github.com/wasm-bindgen/wasm-pack)
+- [Emscripten](https://emscripten.org/) (for `minimal`, `standard`, `global`, or `full`); its bundled Binaryen provides `wasm-opt`
+
+The exact versions, including every submodule, are pinned in
+[`deps/versions.env`](deps/versions.env); see [DEPENDENCIES.md](DEPENDENCIES.md).
+C/C++ dependencies and the Emscripten system libraries are cached in `build/`,
+so run `make clean` after changing the Emscripten version.
 
 ### Build commands
 

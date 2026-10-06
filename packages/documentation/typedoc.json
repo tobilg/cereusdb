@@ -12,6 +12,8 @@
     "./guides/getting-started.md",
     "./guides/package-selection.md",
     "./guides/browser-object-stores.md",
+    "./guides/persistent-databases.md",
+    "./guides/geoparquet-export.md",
     "./guides/wasm-loading.md",
     "./guides/raster-functions.md"
   ],

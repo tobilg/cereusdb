@@ -32,6 +32,24 @@ describe('TypeScript WASM random geometry table function', () => {
     expect(second).toEqual(first);
   });
 
+  it('generates different data without a seed', async () => {
+    // Unseeded calls used to panic on wasm32 (SystemTime::now() is unsupported).
+    const query = `
+      SELECT ST_AsText(geometry) AS geometry
+      FROM sd_random_geometry('{"num_rows": 8, "geom_type": "Point"}')
+      ORDER BY id
+    `;
+
+    const first = await ctx.db.sqlJSON(query);
+    const second = await ctx.db.sqlJSON(query);
+
+    expect(first).toHaveLength(8);
+    expect(second).not.toEqual(first);
+    await expect(
+      ctx.db.sqlJSON("SELECT COUNT(*) AS n FROM sd_random_geometry('{}')"),
+    ).resolves.toEqual([{ n: 1024 }]);
+  });
+
   it('rejects invalid JSON options', async () => {
     await expect(
       ctx.db.sqlJSON("SELECT * FROM sd_random_geometry('not json')"),

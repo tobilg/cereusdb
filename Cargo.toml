@@ -9,11 +9,12 @@ exclude = [
     "build/patched-sources/sedona-db",
     "build/patched-sources/object-store",
     "build/patched-sources/datafusion-common",
+    "build/patched-sources/arrow-ipc",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 license = "Apache-2.0"
 edition = "2021"
 
@@ -52,6 +53,9 @@ proj-sys = { path = "build/patched-sources/georust-proj/proj-sys" }
 gdal-sys = { path = "build/patched-sources/georust-gdal/gdal-sys" }
 object_store = { path = "build/patched-sources/object-store" }
 datafusion-common = { path = "build/patched-sources/datafusion-common" }
+# Backport of apache/arrow-rs#10989 (8-byte length prefix for compressed IPC
+# buffers on wasm32); drop once the dependency tree is on arrow >= 60.
+arrow-ipc = { path = "build/patched-sources/arrow-ipc" }
 
 [profile.release]
 codegen-units = 1

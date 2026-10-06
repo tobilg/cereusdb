@@ -58,7 +58,7 @@ datafusion-expr = { workspace = true }
 # Arrow
 arrow = { workspace = true }
 arrow-array = { workspace = true }
-arrow-ipc = { workspace = true }
+arrow-ipc = { workspace = true, features = ["lz4"] }
 arrow-schema = { workspace = true }
 arrow-json = { workspace = true }
 

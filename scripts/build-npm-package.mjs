@@ -25,6 +25,8 @@ if (!PACKAGE_VARIANTS.has(variant)) {
 
 const sourceIndexPath = resolve(REPO_ROOT, 'js', 'dist', 'index.js');
 const sourceTypesPath = resolve(REPO_ROOT, 'js', 'dist', 'index.d.ts');
+// Other wrapper modules imported by index.js (same directory in the package).
+const WRAPPER_MODULES = ['storage.js', 'storage.d.ts'];
 const wasmSourceDir = resolve(REPO_ROOT, 'dist', variant);
 const packageDir = resolve(REPO_ROOT, 'packages', variant);
 const packageDistDir = resolve(packageDir, 'dist');
@@ -59,6 +61,9 @@ await writeFile(resolve(packageDistDir, 'index.js'), packageIndex);
 await copyFile(sourceTypesPath, resolve(packageDistDir, 'index.d.ts'));
 await writeFile(resolve(packageDistDir, 'external.js'), externalIndex);
 await copyFile(sourceTypesPath, resolve(packageDistDir, 'external.d.ts'));
+for (const filename of WRAPPER_MODULES) {
+  await copyFile(resolve(REPO_ROOT, 'js', 'dist', filename), resolve(packageDistDir, filename));
+}
 
 for (const filename of WASM_FILES) {
   await copyFile(resolve(wasmSourceDir, filename), resolve(packageWasmDir, filename));

@@ -12,6 +12,9 @@ The generated documentation covers:
 - `RegisterParquetTableOptions`
 - `RasterFormat`
 - `QueryResult`
+- Persistent databases: `StorageBackend`, `StorageOptions`, `MemoryStorageBackend`, `OPFSStorageBackend`, `CreateDatabaseOptions`, `AttachDatabaseOptions`, `DatabaseListing`
+- Catalog and tables: `CatalogDatabase`, `CatalogSchema`, `CatalogTable`, `CatalogColumn`, `CreateTableDefinition`, `CreateTableOptions`, `AlterTableOperation`
+- Export: `GeoParquetExportOptions`, `DownloadGeoParquetOptions`, `ExportHandler`, `downloadFile`, `PARQUET_MIME_TYPE`
 
 The runtime SQL surface differs by package:
 
@@ -22,4 +25,6 @@ The runtime SQL surface differs by package:
 
 Browser object-store support is available in `@cereusdb/standard`, `@cereusdb/global`, and `@cereusdb/full`. It is not included in `@cereusdb/minimal`.
 
-See the bundled guides for package selection, browser object stores, and quick start usage.
+Persistent databases (`opfs://`), `ALTER TABLE`, and GeoParquet export (including `COPY ... TO`) are available in all four packages.
+
+See the bundled guides for quick start usage, package selection, browser object stores, persistent databases, GeoParquet export, WASM loading, and raster functions.

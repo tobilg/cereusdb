@@ -17,9 +17,12 @@
 
 //! Arrow IPC and JSON serialization for query results.
 
-use arrow_array::RecordBatch;
+use std::sync::Arc;
+
+use arrow_array::{RecordBatch, UInt64Array};
 use arrow_ipc::writer::StreamWriter;
 use arrow_json::ArrayWriter;
+use arrow_schema::{DataType, Field, Schema};
 use datafusion::error::Result;
 
 /// Serialize RecordBatches to Arrow IPC stream format bytes.
@@ -64,4 +67,15 @@ pub fn batches_to_json(batches: &[RecordBatch]) -> Result<String> {
             format!("JSON UTF-8 error: {e}"),
         )))
     })
+}
+
+/// A single-row `count` result, as returned by DML and COPY statements.
+pub fn count_batch(count: u64) -> RecordBatch {
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        "count",
+        DataType::UInt64,
+        false,
+    )]));
+    RecordBatch::try_new(schema, vec![Arc::new(UInt64Array::from(vec![count]))])
+        .expect("count batch matches its schema")
 }

@@ -47,7 +47,7 @@ Run the narrowest package target that covers your change: `minimal` for GEOS-onl
 
 ### Dependency Pipeline
 
-Submodules in `deps/` are never modified directly. Each one is pinned in `deps/versions.env` by upstream tag (`<NAME>_TAG`, or `<NAME>_COMMIT` when untagged); bumping a submodule means updating that file too, and `make check-deps` enforces it. `scripts/prepare-patched-sources.sh` exports them via `git archive` and applies patch series from `patches/` into `build/patched-sources/`. The root `Cargo.toml` uses `[patch.crates-io]` to redirect `geos-sys`, `proj-sys`, `gdal-sys` to these patched copies.
+Submodules in `deps/` are never modified directly. Each one is pinned in `deps/versions.env` by upstream tag (`<NAME>_TAG`, or `<NAME>_COMMIT` when untagged); bumping a submodule means updating that file too, and `make check-deps` enforces it. `scripts/prepare-patched-sources.sh` exports them via `git archive` and applies patch series from `patches/` into `build/patched-sources/`. The root `Cargo.toml` uses `[patch.crates-io]` to redirect `geos-sys`, `proj-sys`, `gdal-sys` to these patched copies. Two crates.io crates are patched the same way from the local Cargo registry (`prepare_crate`): `datafusion-common` and `arrow-ipc` (a backport of apache/arrow-rs#10989, needed for LZ4-compressed IPC on wasm32 until the tree is on arrow >= 60).
 
 Emscripten C/C++ libraries are built by scripts in `scripts/emscripten/` into `build/sysroot/lib/`. `scripts/build.sh` conditionally builds them if not already present, then links them via `RUSTFLAGS` `-l static=...` flags.
 

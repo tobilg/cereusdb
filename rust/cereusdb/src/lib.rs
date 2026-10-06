@@ -22,10 +22,13 @@
 //! spatial extensions (ST_* functions) registered.
 
 mod context;
+mod export;
 mod io;
 #[cfg(feature = "random-geometry")]
 mod random_geometry;
 mod result;
+mod statements;
+mod storage;
 
 // wasm-bindgen 0.2.114 generates Wasm catch wrappers whenever the final module
 // contains EH instructions. Our linked Emscripten-built C++ libraries can
@@ -201,12 +204,15 @@ mod c_malloc {
     pub unsafe extern "C" fn abort() {}
 }
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use arrow_array::RecordBatch;
+use datafusion::catalog::MemorySchemaProvider;
 use datafusion::dataframe::DataFrame;
 use datafusion::datasource::MemTable;
-use datafusion::logical_expr::{CreateMemoryTable, DdlStatement, LogicalPlan};
+use datafusion::logical_expr::{CreateCatalog, CreateMemoryTable, DdlStatement, LogicalPlan};
 use datafusion::prelude::SessionContext;
 use wasm_bindgen::prelude::*;
 
@@ -216,12 +222,23 @@ use io::{
     load_parquet_buffer_to_memtable, load_raster_buffer_to_memtable,
 };
 use result::batches_to_ipc_bytes;
+use statements::DatabaseStatement;
+use storage::backend::StorageBackend;
+use storage::{DatabaseTarget, OpenMode, StorageManager};
 
 /// Main CereusDB instance for browser use.
 /// Wraps a DataFusion SessionContext with spatial extensions registered.
 #[wasm_bindgen]
 pub struct CereusDB {
     ctx: Arc<SessionContext>,
+    storage: Rc<StorageManager>,
+    /// JS function `(filename, bytes, mimeType)` that receives files written
+    /// by `COPY ... TO`.
+    export_handler: RefCell<Option<js_sys::Function>>,
+}
+
+fn js_err(message: impl std::fmt::Display) -> JsValue {
+    JsValue::from_str(&message.to_string())
 }
 
 #[wasm_bindgen]
@@ -233,8 +250,13 @@ impl CereusDB {
 
         let ctx = create_sedona_session_context()
             .map_err(|e| JsValue::from_str(&format!("Failed to create context: {e}")))?;
+        let storage = Rc::new(StorageManager::install(&ctx));
 
-        Ok(CereusDB { ctx: Arc::new(ctx) })
+        Ok(CereusDB {
+            ctx: Arc::new(ctx),
+            storage,
+            export_handler: RefCell::new(None),
+        })
     }
 
     /// Execute a SQL query.
@@ -269,7 +291,8 @@ impl CereusDB {
     ) -> Result<(), JsValue> {
         load_parquet_buffer_to_memtable(&self.ctx, table_name, data)
             .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to register parquet: {e}")))
+            .map_err(|e| JsValue::from_str(&format!("Failed to register parquet: {e}")))?;
+        self.flush_storage().await
     }
 
     /// Register a remote Parquet file URL as a named table.
@@ -286,7 +309,8 @@ impl CereusDB {
 
         load_parquet_buffer_to_memtable(&self.ctx, table_name, &bytes)
             .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to register parquet: {e}")))
+            .map_err(|e| JsValue::from_str(&format!("Failed to register parquet: {e}")))?;
+        self.flush_storage().await
     }
 
     /// Register browser-backed object stores for ranged/listing reads.
@@ -308,14 +332,18 @@ impl CereusDB {
     /// Register a GeoJSON string as a named table.
     pub fn register_geojson(&self, table_name: &str, geojson: &str) -> Result<(), JsValue> {
         load_geojson_to_memtable(&self.ctx, table_name, geojson)
-            .map_err(|e| JsValue::from_str(&format!("Failed to register GeoJSON: {e}")))
+            .map_err(|e| JsValue::from_str(&format!("Failed to register GeoJSON: {e}")))?;
+        self.schedule_flush();
+        Ok(())
     }
 
     /// Register a GeoTIFF buffer as a single-column raster table.
     /// Requires the full GDAL-enabled build.
     pub fn register_geotiff_buffer(&self, table_name: &str, data: &[u8]) -> Result<(), JsValue> {
         load_geotiff_buffer_to_memtable(&self.ctx, table_name, data)
-            .map_err(|e| JsValue::from_str(&format!("Failed to register GeoTIFF: {e}")))
+            .map_err(|e| JsValue::from_str(&format!("Failed to register GeoTIFF: {e}")))?;
+        self.schedule_flush();
+        Ok(())
     }
 
     /// Register a raster buffer as a single-column raster table.
@@ -327,10 +355,13 @@ impl CereusDB {
         data: &[u8],
     ) -> Result<(), JsValue> {
         load_raster_buffer_to_memtable(&self.ctx, table_name, format, data)
-            .map_err(|e| JsValue::from_str(&format!("Failed to register raster: {e}")))
+            .map_err(|e| JsValue::from_str(&format!("Failed to register raster: {e}")))?;
+        self.schedule_flush();
+        Ok(())
     }
 
-    /// Drop a registered table.
+    /// Drop a registered table. Call `flush()` to write the change when the
+    /// table belongs to a persistent database.
     pub fn drop_table(&self, table_name: &str) -> Result<(), JsValue> {
         self.ctx
             .deregister_table(table_name)
@@ -338,23 +369,142 @@ impl CereusDB {
         Ok(())
     }
 
+    /// Register the storage backend used for database locations with the given
+    /// URL scheme (for example `opfs`).
+    pub fn register_storage_backend(&self, scheme: &str, backend: JsValue) -> Result<(), JsValue> {
+        let backend = StorageBackend::from_js(backend).map_err(js_err)?;
+        self.storage.register_backend(scheme, backend);
+        Ok(())
+    }
+
+    /// Create (`create = true`) or attach a persistent database. Returns the
+    /// database (catalog) name.
+    pub async fn attach_database(
+        &self,
+        location: &str,
+        name: Option<String>,
+        create: bool,
+        if_not_exists: bool,
+    ) -> Result<String, JsValue> {
+        let mode = if create {
+            OpenMode::Create { if_not_exists }
+        } else {
+            OpenMode::Attach { if_not_exists }
+        };
+        self.storage
+            .attach(&self.ctx, location, name, mode)
+            .await
+            .map_err(js_err)
+    }
+
+    /// Detach a persistent database after writing pending changes.
+    pub async fn detach_database(&self, name: &str, if_exists: bool) -> Result<(), JsValue> {
+        self.storage
+            .detach(&self.ctx, name, if_exists)
+            .await
+            .map_err(js_err)
+    }
+
+    /// Drop a database by name or location URL. Persistent databases are
+    /// deleted from storage.
+    pub async fn drop_database(&self, target: &str, if_exists: bool) -> Result<(), JsValue> {
+        let target = if target.contains(":/") {
+            DatabaseTarget::Location(target.to_string())
+        } else {
+            DatabaseTarget::Name(target.to_string())
+        };
+        self.storage
+            .drop_database(&self.ctx, target, if_exists)
+            .await
+            .map_err(js_err)
+    }
+
+    /// Rewrite every table of a persistent database into a single segment.
+    pub async fn compact_database(&self, name: &str) -> Result<(), JsValue> {
+        self.storage.compact(name).await.map_err(js_err)
+    }
+
+    /// Write all pending changes of attached persistent databases.
+    pub async fn flush(&self) -> Result<(), JsValue> {
+        self.flush_storage().await
+    }
+
+    /// Database locations stored in the backend for `scheme`, attached or not.
+    pub async fn list_database_locations(&self, scheme: &str) -> Result<JsValue, JsValue> {
+        if !self.storage.has_backend(scheme) {
+            return Ok(js_sys::Array::new().into());
+        }
+        let locations = self.storage.list_locations(scheme).await.map_err(js_err)?;
+        Ok(locations
+            .into_iter()
+            .map(|location| JsValue::from_str(&location))
+            .collect::<js_sys::Array>()
+            .into())
+    }
+
+    /// Describe all databases, schemas, tables and views as a JSON string.
+    pub async fn catalog_json(&self) -> Result<String, JsValue> {
+        let databases =
+            storage::info::describe_catalog(self.storage.catalog_list(), self.storage.registry())
+                .await
+                .map_err(js_err)?;
+        serde_json::to_string(&databases).map_err(js_err)
+    }
+
+    /// Run a query and encode the result as GeoParquet. `options` may set
+    /// `compression` and `rowGroupSize`.
+    pub async fn export_geoparquet(
+        &self,
+        query: &str,
+        options: JsValue,
+    ) -> Result<js_sys::Uint8Array, JsValue> {
+        let options = if options.is_undefined() || options.is_null() {
+            export::GeoParquetOptions::default()
+        } else {
+            serde_wasm_bindgen::from_value(options)
+                .map_err(|e| js_err(format!("Invalid GeoParquet options: {e}")))?
+        };
+        let (bytes, _) = export::export_geoparquet(&self.ctx, query, options)
+            .await
+            .map_err(|e| js_err(format!("GeoParquet export failed: {e}")))?;
+        Ok(js_sys::Uint8Array::from(bytes.as_slice()))
+    }
+
+    /// Set the function `(filename, bytes, mimeType)` that receives files
+    /// written by `COPY ... TO`. `null` removes it.
+    pub fn register_export_handler(&self, handler: JsValue) -> Result<(), JsValue> {
+        let handler = if handler.is_null() || handler.is_undefined() {
+            None
+        } else {
+            Some(
+                handler
+                    .dyn_into::<js_sys::Function>()
+                    .map_err(|_| js_err("export handler must be a function"))?,
+            )
+        };
+        *self.export_handler.borrow_mut() = handler;
+        Ok(())
+    }
+
+    /// Insert Arrow IPC data (stream or file format) into a table, matching
+    /// columns by name. Returns the number of inserted rows.
+    pub async fn insert_arrow(&self, table_name: &str, data: &[u8]) -> Result<f64, JsValue> {
+        let inserted = statements::insert_arrow(&self.ctx, table_name, data).await;
+        let flushed = self.flush_storage().await;
+        let rows =
+            inserted.map_err(|e| js_err(format!("Failed to insert into {table_name}: {e}")))?;
+        flushed?;
+        Ok(rows as f64)
+    }
+
     /// List all registered table names.
     pub fn tables(&self) -> Result<JsValue, JsValue> {
-        let catalog_names = self.ctx.catalog_names();
-        let mut table_names = Vec::new();
-        for catalog_name in &catalog_names {
-            if let Some(catalog) = self.ctx.catalog(catalog_name) {
-                for schema_name in catalog.schema_names() {
-                    if let Some(schema) = catalog.schema(&schema_name) {
-                        for table_name in schema.table_names() {
-                            table_names.push(table_name);
-                        }
-                    }
-                }
-            }
-        }
-        serde_wasm_bindgen::to_value(&table_names)
-            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+        self.table_names(false)
+    }
+
+    /// List all tables and views as `catalog.schema.table`.
+    pub fn qualified_tables(&self) -> Result<JsValue, JsValue> {
+        self.table_names(true)
     }
 
     /// Get version information.
@@ -371,6 +521,29 @@ impl CereusDB {
 }
 
 impl CereusDB {
+    fn table_names(&self, qualified: bool) -> Result<JsValue, JsValue> {
+        let mut table_names = Vec::new();
+        for catalog_name in self.ctx.catalog_names() {
+            let Some(catalog) = self.ctx.catalog(&catalog_name) else {
+                continue;
+            };
+            for schema_name in catalog.schema_names() {
+                let Some(schema) = catalog.schema(&schema_name) else {
+                    continue;
+                };
+                for table_name in schema.table_names() {
+                    table_names.push(if qualified {
+                        format!("{catalog_name}.{schema_name}.{table_name}")
+                    } else {
+                        table_name
+                    });
+                }
+            }
+        }
+        serde_wasm_bindgen::to_value(&table_names)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
     #[cfg(feature = "browser-object-store")]
     fn register_object_stores_impl(&self, config: JsValue) -> Result<(), JsValue> {
         let config = serde_wasm_bindgen::from_value(config)
@@ -417,7 +590,62 @@ impl CereusDB {
         ))
     }
 
+    /// Write pending changes of persistent databases.
+    async fn flush_storage(&self) -> Result<(), JsValue> {
+        self.storage.flush_all().await.map_err(|e| {
+            js_err(format!(
+                "Storage error: changes were applied in memory but could not be persisted \
+                 (they will be retried with the next statement): {e}"
+            ))
+        })
+    }
+
+    /// Flush from a synchronous method; errors are reported on the console and
+    /// the changes are retried by the next flush.
+    fn schedule_flush(&self) {
+        let storage = Rc::clone(&self.storage);
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = storage.flush_all().await {
+                storage::info::console_warn(&format!("CereusDB storage error: {e}"));
+            }
+        });
+    }
+
     async fn execute_query(&self, query: &str) -> Result<Vec<RecordBatch>, JsValue> {
+        let result = self.execute_statement(query).await;
+        let flushed = self.flush_storage().await;
+        let batches = result?;
+        flushed?;
+        Ok(batches)
+    }
+
+    async fn execute_statement(&self, query: &str) -> Result<Vec<RecordBatch>, JsValue> {
+        if let Some(statement) = statements::parse_database_statement(query)
+            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?
+        {
+            self.execute_database_statement(statement)
+                .await
+                .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
+            return Ok(Vec::new());
+        }
+
+        if let Some(copy) = export::parse_copy(&self.ctx, query)
+            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?
+        {
+            let rows = self
+                .execute_copy(copy)
+                .await
+                .map_err(|e| JsValue::from_str(&format!("COPY failed: {e}")))?;
+            return Ok(vec![result::count_batch(rows as u64)]);
+        }
+
+        if statements::try_execute_alter_table(&self.ctx, query)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?
+        {
+            return Ok(Vec::new());
+        }
+
         if self.try_execute_browser_safe_ddl(query).await? {
             return Ok(Vec::new());
         }
@@ -431,6 +659,112 @@ impl CereusDB {
         df.collect()
             .await
             .map_err(|e| JsValue::from_str(&format!("Collect error: {e}")))
+    }
+
+    async fn execute_database_statement(&self, statement: DatabaseStatement) -> Result<(), String> {
+        match statement {
+            DatabaseStatement::Create {
+                location,
+                name,
+                if_not_exists,
+            } => self
+                .storage
+                .attach(
+                    &self.ctx,
+                    &location,
+                    name,
+                    OpenMode::Create { if_not_exists },
+                )
+                .await
+                .map(|_| ()),
+            DatabaseStatement::Attach {
+                location,
+                alias,
+                if_not_exists,
+            } => self
+                .storage
+                .attach(
+                    &self.ctx,
+                    &location,
+                    alias,
+                    OpenMode::Attach { if_not_exists },
+                )
+                .await
+                .map(|_| ()),
+            DatabaseStatement::Detach { name, if_exists } => {
+                self.storage.detach(&self.ctx, &name, if_exists).await
+            }
+            DatabaseStatement::Drop { target, if_exists } => {
+                self.storage
+                    .drop_database(&self.ctx, target, if_exists)
+                    .await
+            }
+            DatabaseStatement::Use { parts } => self.use_database(&parts),
+        }
+    }
+
+    /// Export the rows of a `COPY` statement and pass the file to the export
+    /// handler. Returns the number of exported rows.
+    async fn execute_copy(&self, copy: export::CopyRequest) -> Result<usize, String> {
+        let handler = self.export_handler.borrow().clone().ok_or(
+            "no export handler: in browsers COPY downloads the file; elsewhere pass \
+             CereusDB.create({ onExport })",
+        )?;
+        let (bytes, rows) = export::export_geoparquet(&self.ctx, &copy.query, copy.options).await?;
+        let returned = handler
+            .call3(
+                &JsValue::NULL,
+                &JsValue::from_str(&copy.filename),
+                &js_sys::Uint8Array::from(bytes.as_slice()),
+                &JsValue::from_str(export::PARQUET_MIME_TYPE),
+            )
+            .map_err(|e| storage::backend::js_error_message(&e))?;
+        wasm_bindgen_futures::JsFuture::from(js_sys::Promise::resolve(&returned))
+            .await
+            .map_err(|e| storage::backend::js_error_message(&e))?;
+        Ok(rows)
+    }
+
+    /// `USE database`, `USE database.schema` or `USE schema` (in the current
+    /// database).
+    fn use_database(&self, parts: &[String]) -> Result<(), String> {
+        let state = self.ctx.state();
+        let current_catalog = state.config().options().catalog.default_catalog.clone();
+        let (catalog_name, schema_name) = match parts {
+            [catalog, schema] => (catalog.clone(), Some(schema.clone())),
+            [name] if self.ctx.catalog(name).is_some() => (name.clone(), None),
+            [name] => (current_catalog, Some(name.clone())),
+            _ => return Err("Invalid USE statement".to_string()),
+        };
+        let catalog = self
+            .ctx
+            .catalog(&catalog_name)
+            .ok_or_else(|| format!("Database '{catalog_name}' does not exist"))?;
+        let schema_name = match schema_name {
+            Some(schema) => {
+                if catalog.schema(&schema).is_none() {
+                    return Err(format!("Schema '{catalog_name}.{schema}' does not exist"));
+                }
+                schema
+            }
+            None => {
+                let names = catalog.schema_names();
+                if names.iter().any(|name| name == "public") {
+                    "public".to_string()
+                } else {
+                    names.into_iter().next().ok_or_else(|| {
+                        format!("Database '{catalog_name}' has no schemas; create one first")
+                    })?
+                }
+            }
+        };
+
+        let state = self.ctx.state_ref();
+        let mut state = state.write();
+        let options = state.config_mut().options_mut();
+        options.catalog.default_catalog = catalog_name;
+        options.catalog.default_schema = schema_name;
+        Ok(())
     }
 
     async fn try_execute_browser_safe_ddl(&self, query: &str) -> Result<bool, JsValue> {
@@ -453,8 +787,42 @@ impl CereusDB {
                 self.execute_create_memory_table(cmd).await?;
                 Ok(true)
             }
+            LogicalPlan::Ddl(DdlStatement::CreateCatalog(cmd)) => {
+                self.execute_create_catalog(cmd).await?;
+                Ok(true)
+            }
             _ => Ok(false),
         }
+    }
+
+    /// In-memory `CREATE DATABASE`: DataFusion creates an empty catalog; add
+    /// the default schema so it matches persistent databases (and `USE` works).
+    async fn execute_create_catalog(&self, cmd: CreateCatalog) -> Result<(), JsValue> {
+        let name = cmd.catalog_name.clone();
+        let existed = self.ctx.catalog(&name).is_some();
+        self.ctx
+            .execute_logical_plan(LogicalPlan::Ddl(DdlStatement::CreateCatalog(cmd)))
+            .await
+            .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
+        if existed {
+            return Ok(());
+        }
+        if let Some(catalog) = self.ctx.catalog(&name) {
+            if catalog.schema_names().is_empty() {
+                let default_schema = self
+                    .ctx
+                    .state()
+                    .config()
+                    .options()
+                    .catalog
+                    .default_schema
+                    .clone();
+                catalog
+                    .register_schema(&default_schema, Arc::new(MemorySchemaProvider::new()))
+                    .map_err(|e| JsValue::from_str(&format!("SQL error: {e}")))?;
+            }
+        }
+        Ok(())
     }
 
     async fn execute_create_memory_table(&self, cmd: CreateMemoryTable) -> Result<(), JsValue> {

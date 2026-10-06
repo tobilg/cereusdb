@@ -122,6 +122,7 @@ mkdir -p "$OUT_DIR"
 prepare_repo "sedona-db" "$ROOT_DIR/deps/sedona-db"
 prepare_repo "object-store" "$ROOT_DIR/deps/object-store"
 prepare_crate "datafusion-common" "52.5.0"
+prepare_crate "arrow-ipc" "57.3.0"
 prepare_repo "georust-geos" "$ROOT_DIR/deps/georust-geos"
 prepare_repo "georust-proj" "$ROOT_DIR/deps/georust-proj"
 prepare_repo "georust-gdal" "$ROOT_DIR/deps/georust-gdal"
@@ -131,6 +132,7 @@ printf '%s\n' \
     "  - sedona-db" \
     "  - object-store" \
     "  - datafusion-common" \
+    "  - arrow-ipc" \
     "  - georust-geos" \
     "  - georust-proj" \
     "  - georust-gdal"

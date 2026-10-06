@@ -111,13 +111,12 @@ impl RandomGeometryProvider {
             if let Some(seed) = options.seed {
                 builder = builder.seed(seed);
             } else {
-                builder = builder.seed(
-                    (std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis()
-                        % u32::MAX as u128) as u64,
-                );
+                // Without a seed, behave like random(). SedonaDB seeds from
+                // SystemTime::now(), which panics on wasm32-unknown-unknown.
+                let seed = getrandom_v03::u64().map_err(|e| {
+                    DataFusionError::Execution(format!("Failed to generate a random seed: {e}"))
+                })?;
+                builder = builder.seed(seed % u32::MAX as u64);
             }
             if let Some(null_rate) = options.null_rate {
                 builder = builder.null_rate(null_rate);

@@ -140,9 +140,90 @@ symlink points at the most recently built artifact.
 | `db.registerGeoJSON(name, geojson)` | Register a GeoJSON string or object as a table |
 | `db.registerRaster(name, bytes, format)` | Register raster bytes as a single-column raster table (`full` only, currently `geotiff` / `tiff`) |
 | `db.registerGeoTIFF(name, bytes)` | Register GeoTIFF bytes as a single-column raster table (`full` only) |
-| `db.dropTable(name)` | Drop a registered table |
-| `db.tables()` | List registered table names |
+| `db.dropTable(name)` | Drop a table (the promise resolves once a persistent change is written) |
+| `db.tables(options?)` | List table and view names (`{ qualified: true }` returns `database.schema.table`) |
+| `db.catalog()` | Describe all databases, schemas, tables, views and columns |
+| `db.createDatabase(url, options?)` | Create a persistent database such as `opfs://mydb` (`CREATE DATABASE`) |
+| `db.attachDatabase(url, options?)` | Open an existing persistent database (`ATTACH`) |
+| `db.detachDatabase(name)` | Write pending changes and close a database (`DETACH`) |
+| `db.dropDatabase(nameOrUrl)` | Delete a database and its stored files (`DROP DATABASE`) |
+| `db.useDatabase(name, schema?)` | Set the default database/schema (`USE`) |
+| `db.listDatabases()` | Attached databases plus stored databases that are not attached |
+| `db.createTable(name, definition)` | Create a table from column definitions or a query |
+| `db.alterTable(name, operation)` | Rename a table, or add / drop / rename a column (`ALTER TABLE`) |
+| `db.insertArrow(table, ipcBytes)` | Insert Arrow IPC data (stream or file) into a table |
+| `db.compactDatabase(name)` | Rewrite each table of a persistent database into one file |
+| `db.flush()` | Write pending changes of persistent databases |
+| `db.exportGeoParquet(queryOrTable, options?)` | Export a table or query result as GeoParquet bytes |
+| `db.downloadGeoParquet(queryOrTable, options?)` | Export as GeoParquet and download the file (or pass it to `onExport`) |
 | `db.version()` | Version string |
+
+### Persistent databases (OPFS)
+
+Tables normally live in memory and are gone after a page reload. A persistent
+database is stored in the browser's
+[Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)
+and shows up as its own catalog, next to the default in-memory `datafusion`
+catalog:
+
+```sql
+CREATE DATABASE 'opfs://mydb';                 -- or: CREATE DATABASE mydb LOCATION 'opfs://mydb'
+CREATE TABLE mydb.public.cities AS SELECT 1 AS id, 'Berlin' AS name, ST_Point(13.4, 52.5) AS geom;
+CREATE SCHEMA mydb.staging;
+INSERT INTO mydb.public.cities VALUES (4, 'Rome', ST_Point(12.5, 41.9));
+UPDATE mydb.public.cities SET name = 'Roma' WHERE id = 4;
+ALTER TABLE mydb.public.cities ADD COLUMN country VARCHAR DEFAULT 'IT';
+USE mydb;                                      -- now `cities` resolves to mydb.public.cities
+
+-- after a reload
+ATTACH 'opfs://mydb';                          -- optionally: AS other_name
+DETACH mydb;
+DROP DATABASE mydb;                            -- deletes the stored files
+SELECT * FROM cereusdb_databases();            -- databases, storage and locations
+```
+
+`CereusDB.create({ attach: ['opfs://mydb'] })` opens (and if needed creates)
+databases at startup. Every statement that changes a persistent database
+writes the change before its promise resolves. Tables are stored as
+LZ4-compressed Arrow IPC files: an `INSERT` adds a file, while `UPDATE`,
+`DELETE` and `ALTER TABLE` rewrite the table. Attaching reads only the
+database's manifest; a table's data is loaded into memory the first time it is
+used. Column defaults and constraints are stored with the table.
+
+- Locations must be quoted and use `opfs://<name>` (letters, digits, `_`, `-`).
+- A database can be open in one tab or worker at a time (Web Locks).
+- Plain `CREATE DATABASE name` (without a location) creates an in-memory
+  database. Like a persistent one, it starts with a `public` schema.
+- Views are stored as SQL. A view that references tables outside its database
+  stays listed (and can be dropped or replaced) but cannot be queried until
+  those tables exist and the database is attached again.
+- Outside browsers (or to use other storage), pass a backend implementing
+  `StorageBackend`, for example `CereusDB.create({ storage: { opfs: new MemoryStorageBackend() } })`.
+
+### GeoParquet export
+
+Tables and query results can be exported as GeoParquet 1.1 (ZSTD-compressed by
+default). Geometry and geography columns are listed in the `geo` metadata with
+their bounding box and CRS; a CRS other than OGC:CRS84 is written as PROJJSON,
+which needs PROJ (`standard`, `global` and `full`).
+
+```ts
+const bytes = await db.exportGeoParquet('SELECT * FROM mydb.public.cities'); // Uint8Array
+await db.downloadGeoParquet('mydb.public.cities');                         // downloads cities.parquet
+```
+
+The same is available in SQL with `COPY ... TO`:
+
+```sql
+COPY mydb.public.cities TO 'cities.parquet';
+COPY (SELECT * FROM cities WHERE pop > 1000000) TO 'big_cities.parquet'
+  STORED AS GEOPARQUET OPTIONS (compression 'snappy', row_group_size 100000);
+```
+
+`downloadGeoParquet()` and `COPY` pass the file to an export handler. In the
+browser's main thread it triggers a download; in Web Workers or Node.js, pass
+your own handler, for example to forward the file:
+`CereusDB.create({ onExport: (filename, data, mimeType) => postMessage({ filename, data }) })`.
 
 ## Spatial function reference
 

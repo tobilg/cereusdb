@@ -1,6 +1,6 @@
 {
   "name": "@cereusdb/minimal",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Minimal CereusDB browser package with GEOS-backed spatial SQL",
   "type": "module",
   "main": "./dist/index.js",

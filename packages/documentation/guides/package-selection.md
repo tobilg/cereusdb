@@ -10,6 +10,13 @@ Browser object stores are included in:
 
 They are not included in `@cereusdb/minimal`. Use `standard` or larger when you need ranged remote Parquet reads or S3/GCS/Azure/HTTP object-store providers.
 
+## Persistent databases and export
+
+Persistent databases (`opfs://`), `ALTER TABLE`, `insertArrow()` and GeoParquet
+export (`exportGeoParquet()`, `downloadGeoParquet()`, `COPY ... TO`) are
+included in every package. Only exporting geometry with a CRS other than
+OGC:CRS84 needs PROJ, which `@cereusdb/minimal` does not include.
+
 ## `@cereusdb/minimal`
 
 Use this when you need the smallest browser package with:

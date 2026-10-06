@@ -65,3 +65,26 @@ await db.registerParquetTable('cities', 'https://example.com/cities.parquet');
 db.registerGeoTIFF('raster', bytes);
 db.registerRaster('raster', bytes, 'geotiff');
 ```
+
+## Keep data across page reloads
+
+Tables live in memory by default. To keep them, create a persistent database in
+the browser's Origin Private File System and create tables in it:
+
+```ts
+const db = await CereusDB.create({ attach: ['opfs://mydb'] }); // opens or creates mydb
+
+await db.sqlJSON(`CREATE TABLE mydb.public.regions AS SELECT * FROM regions`);
+await db.sqlJSON(`USE mydb`);
+```
+
+See [Persistent Databases](./persistent-databases.md).
+
+## Export data
+
+```ts
+await db.downloadGeoParquet('mydb.public.regions'); // downloads regions.parquet
+await db.sqlJSON(`COPY regions TO 'regions.parquet'`); // the same in SQL
+```
+
+See [GeoParquet Export](./geoparquet-export.md).

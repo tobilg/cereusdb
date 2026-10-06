@@ -7,6 +7,30 @@ reloads. Persistent databases keep their tables in the browser's
 views appear in `information_schema`, `SHOW TABLES` and `db.catalog()` next to
 the default in-memory `datafusion` catalog.
 
+## Try it
+
+Run these statements in the
+[playground](https://cereusdb-playground.gh.tobilg.com) (or any page using
+CereusDB):
+
+```sql
+CREATE DATABASE 'opfs://test';
+CREATE TABLE test.public.pts AS SELECT 1 AS id, ST_Point(1, 2) AS geom;
+```
+
+Reload the page, then:
+
+```sql
+ATTACH 'opfs://test';
+SELECT id, ST_AsText(geom) FROM test.public.pts;  -- 1, POINT(1 2)
+COPY test.public.pts TO 'pts.parquet';            -- downloads pts.parquet
+```
+
+While the database is attached, open the page in a second tab and run
+`ATTACH 'opfs://test'` there: it fails with "open in another tab or worker"
+until the first tab runs `DETACH test` or is closed. `DROP DATABASE test`
+removes the database and its files again.
+
 ## Creating and opening databases
 
 ```ts

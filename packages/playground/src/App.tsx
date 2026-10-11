@@ -164,9 +164,10 @@ export default function App(): React.ReactElement {
       });
       setStatus({ kind: 'error', message: 'query failed' });
     } finally {
+      refreshTables();
       setRunning(false);
     }
-  }, [query]);
+  }, [query, refreshTables]);
 
   const loadRemote = useCallback(async () => {
     const db = dbRef.current;
